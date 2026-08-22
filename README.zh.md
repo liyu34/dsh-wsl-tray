@@ -74,10 +74,11 @@ pnpm add dsh-wsl-tray
 
 ## 不发布 npm 的安装方式
 
-如果暂时不想注册 npm 账号，仓库里已生成可直接安装的 tarball：
+如果暂时不想注册 npm 账号，可以直接安装仓库里已生成的预构建 tarball：
 
 ```sh
-pnpm add /path/to/dsh-wsl-tray/dist/dsh-wsl-tray-0.1.0.tgz
+cd ~/.dsh/profiles/web
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.0.tgz
 ```
 
 然后按上面的方式把 `"dsh-wsl-tray"` 加入 profile 的 `dsh.profile.bundles`。

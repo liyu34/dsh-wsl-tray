@@ -86,11 +86,12 @@ the tray PowerShell hidden, and the tray starts `start.sh` inside WSL through
 
 ## Install without npm publishing
 
-If npm publishing is not an option, the repository includes a ready-made
-tarball:
+If npm publishing is not an option, install the prebuilt tarball that is
+included in this repository:
 
 ```sh
-pnpm add /path/to/dsh-wsl-tray/dist/dsh-wsl-tray-0.1.0.tgz
+cd ~/.dsh/profiles/web
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.0.tgz
 ```
 
 Then add `"dsh-wsl-tray"` to the profile bundle list as above.
