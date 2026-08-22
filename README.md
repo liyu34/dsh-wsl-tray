@@ -91,7 +91,7 @@ included in this repository:
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.2.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.3.tgz
 ```
 
 Then add `"dsh-wsl-tray"` to the profile bundle list as above.
