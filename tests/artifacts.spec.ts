@@ -6,13 +6,16 @@ describe('generated scripts', () => {
   it('bakes the launch facts into the WSL start script', () => {
     const script = buildStartScript({
       nodeBin: '/usr/bin/node',
-      cliBin: '/home/me/deepseek-harness/apps/cli/lib/bin.js',
-      cwd: '/home/me/deepseek-harness',
+      sourceCli: '/home/me/deepseek-harness/apps/cli/lib/bin.js',
+      sourceCwd: '/home/me/deepseek-harness',
+      bakedCli: null,
       webUrl: 'http://127.0.0.1:3080',
     })
     expect(script).toContain('URL="http://127.0.0.1:3080"')
-    expect(script).toContain('CLI="/home/me/deepseek-harness/apps/cli/lib/bin.js"')
-    expect(script).toContain('exec "$NODE" "$CLI" web --no-open')
+    expect(script).toContain('SOURCE_CLI="/home/me/deepseek-harness/apps/cli/lib/bin.js"')
+    expect(script).toContain('exec "$NODE" "$SOURCE_CLI" web --no-open')
+    expect(script).toContain('command -v dsh')
+    expect(script).toContain('npx --yes dsh web --no-open')
   })
 
   it('builds the hidden wscript launcher next to the tray script', () => {

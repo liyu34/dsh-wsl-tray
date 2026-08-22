@@ -29,8 +29,9 @@ export interface LaunchConfig {
  */
 export declare function buildStartScript(params: {
     nodeBin: string;
-    cliBin: string;
-    cwd: string;
+    sourceCli: string | null;
+    sourceCwd: string | null;
+    bakedCli: string | null;
     webUrl: string;
 }): string;
 export declare function buildTrayScript(config: LaunchConfig): string;

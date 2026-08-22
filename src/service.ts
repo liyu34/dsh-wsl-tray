@@ -97,25 +97,33 @@ export function wslAppDir(): string {
 }
 
 /**
- * Derive the DSH web launch command from the running host process: the same
- * node binary and CLI entrypoint the web server was started with.
+ * Derive DSH launch candidates from the running host process.
+ *
+ * The generated start.sh tries, in order:
+ * 1. `dsh` on PATH (global npm / pnpm / binary installs);
+ * 2. the source checkout CLI at `~/deepseek-harness/apps/cli/lib/bin.js`;
+ * 3. the current process argv[1] when it is a real JS CLI (npm global or npx
+ *    cache while it lasts);
+ * 4. `npx --yes dsh` as the final self-healing fallback.
+ *
+ * Only paths that exist NOW are baked in; runtime fallbacks cover later moves.
  */
-function resolveStartCommand(): { nodeBin: string; cliBin: string | null; cwd: string } {
+function resolveStartCommand(): {
+  nodeBin: string
+  sourceCli: string | null
+  sourceCwd: string | null
+  bakedCli: string | null
+} {
   const nodeBin = process.execPath
-  let cliBin: string | null = null
-  let cwd = process.cwd()
-  // The source-repo CLI is the most reliable launcher across pnpm/tsx/source
-  // launch modes; prefer it before falling back to the current process argv.
   const repoCli = join(homedir(), 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js')
-  if (existsSync(repoCli)) cliBin = repoCli
-  if (cliBin === null) {
-    const argv1 = process.argv[1]
-    if (argv1 !== undefined && /\.(?:js|mjs|cjs)$/.test(argv1) && existsSync(argv1)) cliBin = argv1
+  const sourceCli = existsSync(repoCli) ? repoCli : null
+  const sourceCwd = sourceCli === null ? null : dirname(dirname(dirname(dirname(sourceCli))))
+  const argv1 = process.argv[1]
+  let bakedCli: string | null = null
+  if (argv1 !== undefined && argv1 !== sourceCli && /\.(?:js|mjs|cjs)$/.test(argv1) && existsSync(argv1)) {
+    bakedCli = argv1
   }
-  if (cliBin !== null && cliBin.split(sep).join('/').endsWith('/apps/cli/lib/bin.js')) {
-    cwd = dirname(dirname(dirname(dirname(cliBin))))
-  }
-  return { nodeBin, cliBin, cwd }
+  return { nodeBin, sourceCli, sourceCwd, bakedCli }
 }
 
 /**
@@ -177,7 +185,7 @@ export class TrayService {
    */
   private currentScripts(): { startScript: string; trayScript: string; trayVbs: string } | null {
     const cli = resolveStartCommand()
-    if (cli.cliBin === null) return null
+    if (cli.sourceCli === null && cli.bakedCli === null) return null
     const config: LaunchConfig = {
       distro: distroName(),
       webUrl: webUrlFor(this.webServer),
@@ -187,8 +195,9 @@ export class TrayService {
     return {
       startScript: buildStartScript({
         nodeBin: cli.nodeBin,
-        cliBin: cli.cliBin,
-        cwd: cli.cwd,
+        sourceCli: cli.sourceCli,
+        sourceCwd: cli.sourceCwd,
+        bakedCli: cli.bakedCli,
         webUrl: config.webUrl,
       }),
       trayScript: buildTrayScript(config),
