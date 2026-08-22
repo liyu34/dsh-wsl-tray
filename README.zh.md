@@ -78,7 +78,7 @@ pnpm add dsh-wsl-tray
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.1.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.2.tgz
 ```
 
 然后按上面的方式把 `"dsh-wsl-tray"` 加入 profile 的 `dsh.profile.bundles`。
