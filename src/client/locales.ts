@@ -15,6 +15,11 @@ export const en = {
   notWsl: 'This plugin only works when DSH itself runs inside WSL.',
   regenerated: 'Shortcut created on the Windows desktop.',
   forbidden: 'Request refused.',
+  projectPath: 'DSH project path (WSL)',
+  projectPathHint: 'Source checkout path, e.g. /home/me/deepseek-harness. Empty = auto-detect.',
+  savePath: 'Save path',
+  savingPath: 'Saving…',
+  pathSaved: 'Project path saved.',
 } satisfies Record<string, string>
 
 export const zh = {
@@ -33,6 +38,11 @@ export const zh = {
   notWsl: '仅当 DSH 运行在 WSL 中时，此插件才可用。',
   regenerated: '已在 Windows 桌面生成快捷方式。',
   forbidden: '请求被拒绝。',
+  projectPath: 'DSH 工程路径（WSL 内）',
+  projectPathHint: '源码目录，例如 /home/me/deepseek-harness。留空则自动检测。',
+  savePath: '保存路径',
+  savingPath: '正在保存…',
+  pathSaved: '工程路径已保存。',
 } satisfies Record<string, string>
 
 export type LocaleKey = keyof typeof en

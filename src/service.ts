@@ -5,7 +5,7 @@
  */
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -108,15 +108,23 @@ export function wslAppDir(): string {
  *
  * Only paths that exist NOW are baked in; runtime fallbacks cover later moves.
  */
-function resolveStartCommand(): {
+function resolveStartCommand(projectPath: string | null | undefined): {
   nodeBin: string
   sourceCli: string | null
   sourceCwd: string | null
   bakedCli: string | null
 } {
   const nodeBin = process.execPath
-  const repoCli = join(homedir(), 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js')
-  const sourceCli = existsSync(repoCli) ? repoCli : null
+  const configured = (projectPath ?? '').trim()
+  const configuredCli = configured === ''
+    ? null
+    : join(configured, 'apps', 'cli', 'lib', 'bin.js')
+  const defaultCli = join(homedir(), 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js')
+  const sourceCli = configuredCli !== null && existsSync(configuredCli)
+    ? configuredCli
+    : existsSync(defaultCli)
+      ? defaultCli
+      : null
   const sourceCwd = sourceCli === null ? null : dirname(dirname(dirname(dirname(sourceCli))))
   const argv1 = process.argv[1]
   let bakedCli: string | null = null
@@ -133,11 +141,40 @@ function resolveStartCommand(): {
 export class TrayService {
   private cachedDesktopDir: string | null | undefined
 
+  private projectPath: string
+
   constructor(
     private readonly ctx: TrayServiceContext,
     private readonly webServer: WebServerLike,
     private readonly shortcutName: string = DEFAULT_SHORTCUT_NAME,
-  ) {}
+  ) {
+    this.projectPath = this.readProjectPathFromDisk()
+  }
+
+  /** Read the persisted source-project path, defaulting to empty (auto-detect). */
+  private readProjectPathFromDisk(): string {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(wslAppDir(), 'project-path.json'), 'utf8'))
+      if (parsed !== null && typeof parsed === 'object' && typeof (parsed as Record<string, unknown>).projectPath === 'string') {
+        return (parsed as Record<string, unknown>).projectPath as string
+      }
+    } catch {
+      // Missing or malformed file is the empty default.
+    }
+    return ''
+  }
+
+  /** The currently configured source-project path (empty = auto-detect). */
+  getProjectPath(): string {
+    return this.projectPath
+  }
+
+  /** Persist the configured source-project path and keep it live for generation. */
+  async setProjectPath(value: string): Promise<void> {
+    this.projectPath = value.trim()
+    await mkdir(wslAppDir(), { recursive: true })
+    await writeFile(join(wslAppDir(), 'project-path.json'), JSON.stringify({ projectPath: this.projectPath }), 'utf8')
+  }
 
   /** The Windows-side directory holding the icon and tray script. */
   private windowsAppDir(): string | null {
@@ -184,7 +221,7 @@ export class TrayService {
    * DSH web CLI cannot be located (regenerate reports that as an error).
    */
   private currentScripts(): { startScript: string; trayScript: string; trayVbs: string } | null {
-    const cli = resolveStartCommand()
+    const cli = resolveStartCommand(this.projectPath)
     if (cli.sourceCli === null && cli.bakedCli === null) return null
     const config: LaunchConfig = {
       distro: distroName(),

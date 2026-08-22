@@ -50,6 +50,24 @@ function writeJson(res: ServerResponse, status: number, body: TrayStatus): void 
   res.end(JSON.stringify(body))
 }
 
+/** Write a non-Status JSON object (project-path responses). */
+function writeObject(res: ServerResponse, status: number, body: Record<string, unknown>): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(JSON.stringify(body))
+}
+
+/** Read a small JSON request body; returns null when absent/unparsable. */
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  if (chunks.length === 0) return null
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    return null
+  }
+}
+
 /** The webserver register face used by this plugin. */
 export interface WebServerLike {
   register(route: {
@@ -83,6 +101,25 @@ export function registerTrayRoutes(server: WebServerLike, service: TrayService):
         const body = await service.regenerate()
         writeJson(res, body.ok ? 200 : 500, body)
         return
+      }
+      if (pathname === `${TRAY_ROUTE_PREFIX}/project-path`) {
+        if (req.method === 'GET' || req.method === 'HEAD') {
+          writeObject(res, 200, { ok: true, projectPath: service.getProjectPath() })
+          return
+        }
+        if (req.method === 'POST') {
+          const payload = await readJsonBody(req)
+          const projectPath = payload !== null && typeof payload === 'object'
+            ? (payload as Record<string, unknown>).projectPath
+            : undefined
+          if (typeof projectPath !== 'string') {
+            writeObject(res, 400, { ok: false, error: 'projectPath must be a string' })
+            return
+          }
+          await service.setProjectPath(projectPath)
+          writeObject(res, 200, { ok: true, projectPath: service.getProjectPath() })
+          return
+        }
       }
       writeJson(res, 404, { ...await service.status(), ok: false, lastError: 'not found' })
     },

@@ -142,9 +142,13 @@ function Start-DshWsl {
   $launcher.Run($wslCmd, 0, $false) | Out-Null
 }
 
-function Restart-Dsh {
+function Stop-Dsh {
   $stopCmd = 'wsl.exe -d ' + $distro + ' -- bash -lc "pkill -f ''apps/cli/lib/bin.js web'' || true"'
   $launcher.Run($stopCmd, 0, $true) | Out-Null
+}
+
+function Restart-Dsh {
+  Stop-Dsh
   Start-Sleep -Seconds 2
   Start-DshWsl
 }
@@ -180,6 +184,7 @@ $restartItem.Add_Click({ Restart-Dsh })
 $menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $exitItem = $menu.Items.Add('退出')
 $exitItem.Add_Click({
+  Stop-Dsh
   $tray.Visible = $false
   $tray.Dispose()
   [System.Windows.Forms.Application]::Exit()

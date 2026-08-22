@@ -4,6 +4,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children }: { children?: unknown }) => children ?? null,
   FishLogo: () => null,
   IconChevronDownOutline14: () => null,
+  Input: () => null,
 }))
 
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -15,10 +16,24 @@ describe('client card wiring', () => {
   it('registers the settings.plugin.item card under the dsh-wsl-tray namespace', () => {
     const registered: Array<{ meta: Record<string, unknown>; render: () => unknown }> = []
     const calls: string[] = []
+    const slots = {
+      inject(slot: string, register: () => unknown) {
+        calls.push(`slots.inject:${slot}`)
+        register()
+      },
+      register(meta: Record<string, unknown>, render: () => unknown) {
+        registered.push({ meta, render })
+        return () => {}
+      },
+    }
     const ctx = {
       effect(callback: () => unknown, label?: string) {
         calls.push(label ?? '')
         callback()
+      },
+      inject(services: string[], callback: (scoped: unknown) => void) {
+        calls.push(`inject:${services.join(',')}`)
+        callback({ slots, settingsScope: { bind: () => ({ getSnapshot: () => ({}), subscribe: () => () => {}, set: async () => {} }) } })
       },
       locale: {
         register(namespace: string) {
@@ -28,16 +43,7 @@ describe('client card wiring', () => {
           return (key: string) => `${namespace}.${key}`
         },
       },
-      slots: {
-        inject(slot: string, register: () => unknown) {
-          calls.push(`slots.inject:${slot}`)
-          register()
-        },
-        register(meta: Record<string, unknown>, render: () => unknown) {
-          registered.push({ meta, render })
-          return () => {}
-        },
-      },
+      slots,
     }
 
     apply(ctx as never)
@@ -51,7 +57,8 @@ describe('client card wiring', () => {
   })
 
   it('renders the settings card without a runtime error', () => {
-    const html = renderToStaticMarkup(h(SettingsCard, { t: (key: string) => key }))
+    const scope = { getSnapshot: () => ({}), subscribe: () => () => {}, set: async () => {} }
+    const html = renderToStaticMarkup(h(SettingsCard, { t: (key: string) => key, scope }))
     expect(html).toContain('title')
     expect(html).toContain('description')
     expect(html).toContain('dsh-wsl-tray-card')

@@ -50,7 +50,14 @@ export declare class TrayService {
     private readonly webServer;
     private readonly shortcutName;
     private cachedDesktopDir;
+    private projectPath;
     constructor(ctx: TrayServiceContext, webServer: WebServerLike, shortcutName?: string);
+    /** Read the persisted source-project path, defaulting to empty (auto-detect). */
+    private readProjectPathFromDisk;
+    /** The currently configured source-project path (empty = auto-detect). */
+    getProjectPath(): string;
+    /** Persist the configured source-project path and keep it live for generation. */
+    setProjectPath(value: string): Promise<void>;
     /** The Windows-side directory holding the icon and tray script. */
     private windowsAppDir;
     /** Resolve the desktop once per mount; PowerShell is authoritative. */

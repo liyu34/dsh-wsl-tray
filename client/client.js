@@ -24,7 +24,12 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			failed: "Failed",
 			notWsl: "This plugin only works when DSH itself runs inside WSL.",
 			regenerated: "Shortcut created on the Windows desktop.",
-			forbidden: "Request refused."
+			forbidden: "Request refused.",
+			projectPath: "DSH project path (WSL)",
+			projectPathHint: "Source checkout path, e.g. /home/me/deepseek-harness. Empty = auto-detect.",
+			savePath: "Save path",
+			savingPath: "Saving…",
+			pathSaved: "Project path saved."
 		};
 		const zh = {
 			title: "WSL 桌面与托盘",
@@ -41,16 +46,21 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			failed: "失败",
 			notWsl: "仅当 DSH 运行在 WSL 中时，此插件才可用。",
 			regenerated: "已在 Windows 桌面生成快捷方式。",
-			forbidden: "请求被拒绝。"
+			forbidden: "请求被拒绝。",
+			projectPath: "DSH 工程路径（WSL 内）",
+			projectPathHint: "源码目录，例如 /home/me/deepseek-harness。留空则自动检测。",
+			savePath: "保存路径",
+			savingPath: "正在保存…",
+			pathSaved: "工程路径已保存。"
 		};
 		//#endregion
 		//#region src/client/SettingsCard.tsx
 		/**
 		* The plugin card on the plugin-configuration tab. It mirrors the host's
 		* PluginCard chrome (collapsible header, name over description, chevron) using
-		* the same design tokens, and owns its own controls: status rows and the
-		* regenerate/open buttons. The section only dispatches the card; it never
-		* interprets the namespace.
+		* the same design tokens, and owns its controls: the source-project path,
+		* status rows, and the regenerate/open buttons. The card talks to the host
+		* through `/dsh-wsl-tray/*`; it does not depend on the settings scope.
 		*/
 		const STYLE_ID = "dsh-wsl-tray-card-style";
 		const CARD_CSS = `
@@ -68,6 +78,9 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 .dsh-wsl-tray-status-row{display:flex;justify-content:space-between;gap:12px;font-size:13px;line-height:1.5;padding:4px 0}
 .dsh-wsl-tray-status-label{color:var(--dsw-alias-label-tertiary)}
 .dsh-wsl-tray-status-value{text-align:right;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
+.dsh-wsl-tray-field{display:flex;flex-direction:column;gap:6px;padding:10px 0}
+.dsh-wsl-tray-field-label{font-size:13px;font-weight:500;line-height:1.5;color:var(--dsw-alias-label-primary)}
+.dsh-wsl-tray-field-hint{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
 .dsh-wsl-tray-message{font-size:12px;line-height:1.5;overflow-wrap:anywhere;margin:8px 0 0}
 .dsh-wsl-tray-buttons{display:flex;flex-wrap:wrap;gap:8px;padding-top:10px}
 `;
@@ -85,6 +98,17 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			overflowWrap: "anywhere",
 			color: "var(--dsw-alias-label-secondary)"
 		};
+		const inputStyle = {
+			width: "100%",
+			height: 34,
+			padding: "0 12px",
+			border: "1px solid var(--dsw-alias-border-l2)",
+			borderRadius: 8,
+			background: "var(--dsw-alias-bg-layer-3)",
+			fontSize: 13,
+			lineHeight: 1.5,
+			color: "var(--dsw-alias-label-primary)"
+		};
 		function YesNo({ value }) {
 			return (0, react.createElement)("span", null, value === true ? "✓" : "—");
 		}
@@ -97,6 +121,8 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			const [open, setOpen] = (0, react.useState)(false);
 			const [status, setStatus] = (0, react.useState)(null);
 			const [phase, setPhase] = (0, react.useState)("idle");
+			const [pathSavePhase, setPathSavePhase] = (0, react.useState)("idle");
+			const [draftPath, setDraftPath] = (0, react.useState)("");
 			const [message, setMessage] = (0, react.useState)(null);
 			(0, react.useEffect)(() => {
 				if (document.getElementById(STYLE_ID) === null) {
@@ -113,9 +139,12 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 				let live = true;
 				(async () => {
 					try {
-						const body = await (await fetch("/dsh-wsl-tray/status", { cache: "no-store" })).json();
+						const [statusResponse, pathResponse] = await Promise.all([fetch("/dsh-wsl-tray/status", { cache: "no-store" }), fetch("/dsh-wsl-tray/project-path", { cache: "no-store" })]);
+						const statusBody = await statusResponse.json();
+						const pathBody = await pathResponse.json();
 						if (live) {
-							setStatus(body);
+							setStatus(statusBody);
+							if (typeof pathBody.projectPath === "string") setDraftPath(pathBody.projectPath);
 							setPhase("ready");
 						}
 					} catch {
@@ -144,7 +173,32 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 					setMessage(error instanceof Error ? error.message : String(error));
 				}
 			};
+			const savePath = async () => {
+				setPathSavePhase("saving");
+				setMessage(null);
+				try {
+					const body = await (await fetch("/dsh-wsl-tray/project-path", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ projectPath: draftPath.trim() })
+					})).json();
+					if (body.ok !== true) {
+						setPathSavePhase("idle");
+						setPhase("failed");
+						setMessage(body.error ?? t("failed"));
+						return;
+					}
+					setPathSavePhase("idle");
+					setMessage(t("pathSaved"));
+					await regenerate();
+				} catch (error) {
+					setPathSavePhase("idle");
+					setPhase("failed");
+					setMessage(error instanceof Error ? error.message : String(error));
+				}
+			};
 			const busy = phase === "loading" || phase === "regenerating";
+			const pathBusy = pathSavePhase === "saving";
 			const shortcutOk = status?.shortcutExists === true;
 			const trayOk = status?.trayScriptExists === true && status?.trayVbsExists === true && status?.iconExists === true;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
@@ -170,6 +224,28 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 				}), open ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "dsh-wsl-tray-body",
 					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsh-wsl-tray-field",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsh-wsl-tray-field-label",
+									children: t("projectPath")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									style: inputStyle,
+									value: draftPath,
+									placeholder: "/home/me/deepseek-harness",
+									disabled: pathBusy || busy,
+									onChange: (event) => {
+										setDraftPath(event.target.value);
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsh-wsl-tray-field-hint",
+									children: t("projectPathHint")
+								})
+							]
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: rowBase,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -212,22 +288,34 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 						}) : null,
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "dsh-wsl-tray-buttons",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-								variant: "primary",
-								size: "sm",
-								disabled: busy || status?.wsl === false,
-								onClick: () => {
-									regenerate();
-								},
-								children: phase === "regenerating" ? t("regenerating") : t("regenerate")
-							}), status?.webUrl !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-								variant: "outline",
-								size: "sm",
-								onClick: () => {
-									window.open(status.webUrl, "_blank", "noopener");
-								},
-								children: t("openWeb")
-							}) : null]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+									variant: "primary",
+									size: "sm",
+									disabled: pathBusy || busy || status?.wsl === false,
+									onClick: () => {
+										savePath();
+									},
+									children: pathBusy ? t("savingPath") : t("savePath")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+									variant: "outline",
+									size: "sm",
+									disabled: busy || status?.wsl === false,
+									onClick: () => {
+										regenerate();
+									},
+									children: phase === "regenerating" ? t("regenerating") : t("regenerate")
+								}),
+								status?.webUrl !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+									variant: "outline",
+									size: "sm",
+									onClick: () => {
+										window.open(status.webUrl, "_blank", "noopener");
+									},
+									children: t("openWeb")
+								}) : null
+							]
 						}),
 						message !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "dsh-wsl-tray-message",
