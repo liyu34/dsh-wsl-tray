@@ -28,6 +28,30 @@ export interface WebServerLike {
     readonly host: string;
     readonly port: number;
 }
+/**
+ * The watchdog state the Windows tray rewrites as watchdog-status.json on
+ * every tick. The host only reads it; the tray owns the state machine.
+ */
+export interface WatchdogStatus {
+    enabled?: boolean;
+    /** starting | probing | restarting | backoff | paused */
+    phase?: string;
+    pausedByUser?: boolean;
+    autoPaused?: boolean;
+    probeFailures?: number;
+    downThreshold?: number;
+    restartFailures?: number;
+    maxRestartFailures?: number;
+    lastProbeDetail?: string;
+    lastAliveAt?: string | null;
+    lastRestartAt?: string | null;
+    lastRestartOk?: boolean | null;
+    updatedAt?: string;
+}
+/** Tail of the tray's watchdog.log. */
+export interface WatchdogLogResult {
+    log: string;
+}
 /** The context face this service needs. */
 export interface TrayServiceContext {
     readonly logger?: {
@@ -64,6 +88,10 @@ export declare class TrayService {
     desktopDir(): Promise<string | null>;
     /** Read the current on-disk facts. */
     status(): Promise<TrayStatus>;
+    /** Read the current on-disk watchdog status (null when the tray has not written it). */
+    watchdogStatus(): Promise<WatchdogStatus | null>;
+    /** Return the last `maxLines` lines of the tray's watchdog log ('' when absent). */
+    watchdogLog(maxLines?: number): Promise<WatchdogLogResult>;
     /**
      * Build the two text artifacts for the current host facts. Null when the
      * DSH web CLI cannot be located (regenerate reports that as an error).

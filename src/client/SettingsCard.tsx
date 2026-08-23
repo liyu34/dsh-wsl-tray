@@ -36,8 +36,32 @@ interface ProjectPathBody {
   error?: string
 }
 
+interface WatchdogStatusC {
+  enabled?: boolean
+  phase?: string
+  pausedByUser?: boolean
+  autoPaused?: boolean
+  probeFailures?: number
+  downThreshold?: number
+  restartFailures?: number
+  maxRestartFailures?: number
+  lastProbeDetail?: string
+  lastAliveAt?: string | null
+  lastRestartAt?: string | null
+  lastRestartOk?: boolean | null
+  updatedAt?: string
+}
+
+interface WatchdogBody {
+  ok?: boolean
+  watchdog?: WatchdogStatusC | null
+  log?: string
+  error?: string
+}
+
 type Phase = 'idle' | 'loading' | 'regenerating' | 'ready' | 'failed'
 type PathSavePhase = 'idle' | 'saving'
+type LogPhase = 'idle' | 'loading' | 'ready' | 'failed'
 
 const STYLE_ID = 'dsh-wsl-tray-card-style'
 const CARD_CSS = `
@@ -70,6 +94,27 @@ function YesNo({ value }: { value: boolean | undefined }): ReactElement {
   return h('span', null, value === true ? '✓' : '—')
 }
 
+const WD_PHASE_KEYS: Record<string, LocaleKey> = {
+  starting: 'wdPhaseStarting',
+  probing: 'wdPhaseProbing',
+  restarting: 'wdPhaseRestarting',
+  backoff: 'wdPhaseBackoff',
+  paused: 'wdPhasePaused',
+}
+
+function formatTime(iso: string | null | undefined, t: (key: LocaleKey) => string): string {
+  if (iso === null || iso === undefined || iso === '') return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+function restartResultLabel(ok: boolean | null | undefined, t: (key: LocaleKey) => string): string {
+  if (ok === null || ok === undefined) return t('wdRestartUnknown')
+  return ok === true ? t('wdRestartOk') : t('wdRestartFailed')
+}
+
 /**
  * Render the plugin's settings card.
  * @param props.t - locale reader bound to this plugin's dictionary.
@@ -78,10 +123,13 @@ function YesNo({ value }: { value: boolean | undefined }): ReactElement {
 export function SettingsCard({ t }: SettingsCardProps): ReactElement {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<StatusBody | null>(null)
+  const [watchdog, setWatchdog] = useState<WatchdogBody | null>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [pathSavePhase, setPathSavePhase] = useState<PathSavePhase>('idle')
   const [draftPath, setDraftPath] = useState('')
   const [message, setMessage] = useState<string | null>(null)
+  const [logText, setLogText] = useState('')
+  const [logPhase, setLogPhase] = useState<LogPhase>('idle')
 
   useEffect(() => {
     if (document.getElementById(STYLE_ID) === null) {
@@ -99,14 +147,17 @@ export function SettingsCard({ t }: SettingsCardProps): ReactElement {
     let live = true
     void (async () => {
       try {
-        const [statusResponse, pathResponse] = await Promise.all([
+        const [statusResponse, pathResponse, watchdogResponse] = await Promise.all([
           fetch('/dsh-wsl-tray/status', { cache: 'no-store' }),
           fetch('/dsh-wsl-tray/project-path', { cache: 'no-store' }),
+          fetch('/dsh-wsl-tray/watchdog', { cache: 'no-store' }),
         ])
         const statusBody = (await statusResponse.json()) as StatusBody
         const pathBody = (await pathResponse.json()) as ProjectPathBody
+        const watchdogBody = (await watchdogResponse.json()) as WatchdogBody
         if (live) {
           setStatus(statusBody)
+          setWatchdog(watchdogBody)
           if (typeof pathBody.projectPath === 'string') setDraftPath(pathBody.projectPath)
           setPhase('ready')
         }
@@ -116,6 +167,18 @@ export function SettingsCard({ t }: SettingsCardProps): ReactElement {
     })()
     return () => { live = false }
   }, [])
+
+  const loadLog = async (): Promise<void> => {
+    setLogPhase('loading')
+    try {
+      const response = await fetch('/dsh-wsl-tray/watchdog-log?lines=120', { cache: 'no-store' })
+      const body = (await response.json()) as WatchdogBody
+      setLogText(typeof body.log === 'string' ? body.log : '')
+      setLogPhase('ready')
+    } catch {
+      setLogPhase('failed')
+    }
+  }
 
   const regenerate = async (): Promise<void> => {
     setPhase('regenerating')
@@ -202,6 +265,100 @@ export function SettingsCard({ t }: SettingsCardProps): ReactElement {
             <div style={rowBase}><span style={label}>{t('wsl')}</span><span style={value}><YesNo value={status?.wsl} /></span></div>
             <div style={rowBase}><span style={label}>{t('shortcut')}</span><span style={value}><YesNo value={shortcutOk} /></span></div>
             <div style={rowBase}><span style={label}>{t('tray')}</span><span style={value}><YesNo value={trayOk} /></span></div>
+
+            {watchdog?.watchdog !== null && watchdog?.watchdog !== undefined
+              ? (
+                <div className="dsh-wsl-tray-field">
+                  <span className="dsh-wsl-tray-field-label">{t('wdTitle')}</span>
+                  <div style={rowBase}><span style={label}>{t('wdEnabled')}</span><span style={value}><YesNo value={watchdog.watchdog.enabled} /></span></div>
+                  <div style={rowBase}>
+                    <span style={label}>{t('wdState')}</span>
+                    <span style={value}>
+                      {t(WD_PHASE_KEYS[watchdog.watchdog.phase ?? ''] ?? 'wdPhaseUnknown')}
+                      {watchdog.watchdog.phase === 'paused'
+                        ? (
+                          <span>
+                            {' '}
+                            (
+                            {watchdog.watchdog.autoPaused === true
+                              ? t('wdPausedAuto')
+                              : watchdog.watchdog.pausedByUser === true
+                                ? t('wdPausedUser')
+                                : t('wdPhasePaused')}
+                            )
+                          </span>
+                        )
+                        : null}
+                    </span>
+                  </div>
+                  <div style={rowBase}>
+                    <span style={label}>{t('wdRestartFailures')}</span>
+                    <span style={value}>
+                      {watchdog.watchdog.restartFailures ?? 0}
+                      /
+                      {watchdog.watchdog.maxRestartFailures ?? '—'}
+                    </span>
+                  </div>
+                  <div style={rowBase}>
+                    <span style={label}>{t('wdProbes')}</span>
+                    <span style={value}>
+                      {watchdog.watchdog.probeFailures ?? 0}
+                      /
+                      {watchdog.watchdog.downThreshold ?? '—'}
+                      {watchdog.watchdog.lastProbeDetail !== undefined && watchdog.watchdog.lastProbeDetail !== ''
+                        ? ` (${watchdog.watchdog.lastProbeDetail})`
+                        : ''}
+                    </span>
+                  </div>
+                  <div style={rowBase}><span style={label}>{t('wdLastAlive')}</span><span style={value}>{formatTime(watchdog.watchdog.lastAliveAt, t)}</span></div>
+                  <div style={rowBase}>
+                    <span style={label}>{t('wdLastRestart')}</span>
+                    <span style={value}>
+                      {formatTime(watchdog.watchdog.lastRestartAt, t)}
+                      {' '}
+                      [{restartResultLabel(watchdog.watchdog.lastRestartOk, t)}]
+                    </span>
+                  </div>
+                  <div className="dsh-wsl-tray-buttons">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={logPhase === 'loading'}
+                      onClick={() => { void loadLog() }}
+                    >
+                      {logPhase === 'ready' ? t('wdLogRefresh') : t('wdLog')}
+                    </Button>
+                  </div>
+                  {logPhase === 'ready' && logText !== ''
+                    ? (
+                      <pre
+                        style={{
+                          margin: '8px 0 0',
+                          padding: 10,
+                          maxHeight: 260,
+                          overflow: 'auto',
+                          borderRadius: 8,
+                          background: 'var(--dsw-alias-bg-layer-1)',
+                          border: '1px solid var(--dsw-alias-border-l2)',
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          color: 'var(--dsw-alias-label-secondary)',
+                          whiteSpace: 'pre-wrap',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {logText}
+                      </pre>
+                    )
+                    : null}
+                  {logPhase === 'ready' && logText === ''
+                    ? <p className="dsh-wsl-tray-message" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('wdLogEmpty')}</p>
+                    : null}
+                </div>
+              )
+              : watchdog !== null && watchdog !== undefined
+                ? <p className="dsh-wsl-tray-message" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('wdNotRunning')}</p>
+                : null}
 
             {status?.wsl === false
               ? <p className="dsh-wsl-tray-message" style={{ color: 'var(--dsw-alias-label-error)' }}>{t('notWsl')}</p>

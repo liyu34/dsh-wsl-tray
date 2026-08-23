@@ -9,9 +9,13 @@
   - 打开 DeepSeek Harness
   - 重新生成桌面快捷方式
   - 重启 DSH 服务
+  - 暂停守护进程 / 恢复守护进程
   - 退出托盘
 - **双击托盘图标**也会直接打开 DSH 网页。
-- 插件配置页的 “WSL 桌面与托盘” 卡片可以查看状态，并一键重新生成桌面快捷方式。
+- **托盘内置守护进程**：定时探测 DSH 网址，探测失败即自动重启 DSH，连续失败到上限后
+  停止自动重启，并把全过程写入 `watchdog.log`（详见下文「守护进程」）。
+- 插件配置页的 “WSL 桌面与托盘” 卡片可以查看状态（托盘文件 + 守护进程状态），
+  一键重新生成桌面快捷方式，还可以直接查看守护日志。
 - 全程无控制台窗口：快捷方式通过 `wscript.exe` + VBS 完全隐藏启动。
 
 ## 环境要求
@@ -68,9 +72,37 @@ pnpm add dsh-wsl-tray
 %USERPROFILE%\Desktop\DeepSeek Harness.lnk
 ```
 
+托盘运行期间，守护进程会维护两个运行期文件（配置卡片上都能看到）：
+
+| 文件 | 位置 |
+|---|---|
+| `watchdog.log` | `%USERPROFILE%\.dsh\dsh-wsl-tray\watchdog.log`（512KB 自动滚动） |
+| `watchdog-status.json` | `%USERPROFILE%\.dsh\dsh-wsl-tray\watchdog-status.json`（每次探测更新） |
+
 快捷方式指向 `wscript.exe`，通过 `dsh-tray.vbs` 隐藏启动托盘 PowerShell；托盘再通过
 `WScript.Shell.Run(..., 0, false)` 隐藏启动 WSL 中的 `start.sh`。
 
+## 守护进程
+
+守护进程放在托盘里运行（托盘是唯一刻意独立于 DSH 的常驻进程），它回答了重启守护的
+三个核心问题：
+
+1. **如何判断 DSH 运行状态**：每 `probeIntervalSec`（默认 10 秒）对 DSH 网址做一次
+   `Invoke-WebRequest` HTTP 探测（超时 3 秒）。每次探测都会记录状态码或错误文本，
+   因此「连接被拒（无进程监听）」「超时（服务器卡死）」「异常状态码」在日志里是可以
+   区分的。连续 `downThreshold`（3）次探测失败才会判定 DSH 失活。
+2. **重启是否成功与放弃**：触发一次重启（通过 `wsl.exe` 停止再启动）后，等待
+   `restartWaitSec`（180 秒）内网址重新有响应：有响应 = 重启成功，失败计数清零；
+   窗口内没响应 = 本次重启失败。连续 `maxRestartFailures`（3）次失败后守护进程
+   **暂停自动重启**，不再无限重试。可通过托盘菜单「恢复守护进程」手动恢复，DSH
+   一旦恢复响应也会自动恢复。
+3. **日志**：每次探测、状态迁移、重启触发、成功/失败、暂停/恢复都会带时间戳和
+   级别追加到 `watchdog.log`；当前状态机快照每次探测写入 `watchdog-status.json`。
+   插件配置卡片通过 `/dsh-wsl-tray/watchdog` 和 `/dsh-wsl-tray/watchdog-log` 暴露它们。
+
+状态机：`starting`（启动宽限期）→ `probing`（稳态探测）→ `restarting`（重启后等待）
+→ `backoff`（冷却）或 `paused`（放弃/手动暂停）。上面的调参值烘焙在生成的
+`dsh-tray.ps1` 里；改 `src/artifacts.ts` 的 `DEFAULT_WATCHDOG_CONFIG` 后重新生成即可。
 
 ## 不发布 npm 的安装方式
 
@@ -78,7 +110,7 @@ pnpm add dsh-wsl-tray
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.3.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.4.tgz
 ```
 
 然后按上面的方式把 `"dsh-wsl-tray"` 加入 profile 的 `dsh.profile.bundles`。
@@ -90,7 +122,8 @@ pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.3.tgz
    一次性启动器退出后回收进程。
 3. **自动开网页**：托盘脚本里的 Windows 定时器每 2 秒探测 DSH URL，一旦就绪就用
    `Start-Process $webUrl` 打开默认浏览器。
-4. **重新生成**：配置卡片和托盘菜单都调用同一个 `dsh-tray.ps1 -Regenerate` 逻辑。
+4. **守护进程**：第二个定时器每 10 秒探测 URL，按上面描述的状态机自动重启。
+5. **重新生成**：配置卡片和托盘菜单都调用同一个 `dsh-tray.ps1 -Regenerate` 逻辑。
 
 ## 开发
 
@@ -105,5 +138,7 @@ npm pack --dry-run
 ## 已知限制
 
 - 仅在 WSL 环境中启用；非 WSL 环境配置卡片会提示不可用。
+- 守护进程只在托盘运行时有效：选择「退出」会同时停掉托盘的守护能力。若希望开机后就
+  有守护，可把快捷方式加入 Windows 启动文件夹。
 - 托盘“退出”只退出托盘图标，不会停止已经启动的 DSH 后台进程（可通过 Windows 任务管理器或
   `wsl --shutdown` 停止）。

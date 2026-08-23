@@ -11,11 +11,14 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import {
   DEFAULT_SHORTCUT_NAME,
+  DEFAULT_WATCHDOG_CONFIG,
   DEFAULT_WEB_URL,
   ICON_FILE_NAME,
   START_SCRIPT_NAME,
   TRAY_SCRIPT_NAME,
   TRAY_VBS_NAME,
+  WATCHDOG_LOG_NAME,
+  WATCHDOG_STATUS_NAME,
   WSL_DIR_NAME,
   WIN_DIR_REL,
   buildStartScript,
@@ -57,6 +60,32 @@ export interface TrayStatus {
 export interface WebServerLike {
   readonly host: string
   readonly port: number
+}
+
+/**
+ * The watchdog state the Windows tray rewrites as watchdog-status.json on
+ * every tick. The host only reads it; the tray owns the state machine.
+ */
+export interface WatchdogStatus {
+  enabled?: boolean
+  /** starting | probing | restarting | backoff | paused */
+  phase?: string
+  pausedByUser?: boolean
+  autoPaused?: boolean
+  probeFailures?: number
+  downThreshold?: number
+  restartFailures?: number
+  maxRestartFailures?: number
+  lastProbeDetail?: string
+  lastAliveAt?: string | null
+  lastRestartAt?: string | null
+  lastRestartOk?: boolean | null
+  updatedAt?: string
+}
+
+/** Tail of the tray's watchdog.log. */
+export interface WatchdogLogResult {
+  log: string
 }
 
 /** The context face this service needs. */
@@ -216,6 +245,34 @@ export class TrayService {
     }
   }
 
+  /** Read the current on-disk watchdog status (null when the tray has not written it). */
+  async watchdogStatus(): Promise<WatchdogStatus | null> {
+    const trayDir = this.windowsAppDir()
+    if (trayDir === null) return null
+    try {
+      const raw = await readFile(join(trayDir, WATCHDOG_STATUS_NAME), 'utf8')
+      const parsed: unknown = JSON.parse(raw.replace(/^\uFEFF/, ''))
+      return parsed !== null && typeof parsed === 'object' ? parsed as WatchdogStatus : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Return the last `maxLines` lines of the tray's watchdog log ('' when absent). */
+  async watchdogLog(maxLines = 200): Promise<WatchdogLogResult> {
+    const trayDir = this.windowsAppDir()
+    if (trayDir === null) return { log: '' }
+    try {
+      const raw = await readFile(join(trayDir, WATCHDOG_LOG_NAME), 'utf8')
+      const text = raw.replace(/^\uFEFF/, '')
+      const lines = text.split(/\r?\n/).filter(line => line !== '')
+      const capped = Math.max(1, Math.min(Math.floor(maxLines), 2000))
+      return { log: lines.slice(-capped).join('\n') }
+    } catch {
+      return { log: '' }
+    }
+  }
+
   /**
    * Build the two text artifacts for the current host facts. Null when the
    * DSH web CLI cannot be located (regenerate reports that as an error).
@@ -237,7 +294,7 @@ export class TrayService {
         bakedCli: cli.bakedCli,
         webUrl: config.webUrl,
       }),
-      trayScript: buildTrayScript(config),
+      trayScript: buildTrayScript(config, DEFAULT_WATCHDOG_CONFIG),
       trayVbs: buildTrayVbs(),
     }
   }

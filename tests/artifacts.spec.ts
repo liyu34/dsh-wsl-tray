@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { buildStartScript, buildTrayScript, buildTrayVbs } from '../src/artifacts.ts'
+import { buildStartScript, buildTrayScript, buildTrayVbs, DEFAULT_WATCHDOG_CONFIG, WATCHDOG_LOG_NAME, WATCHDOG_STATUS_NAME } from '../src/artifacts.ts'
 import { wslPathToWindowsPath, webUrlFor } from '../src/service.ts'
+
+function trayScript(): string {
+  return buildTrayScript({
+    distro: 'Ubuntu',
+    webUrl: 'http://127.0.0.1:3080',
+    shortcutName: 'DeepSeek Harness',
+    wslStartScript: '~/.dsh/dsh-wsl-tray/start.sh',
+  })
+}
 
 describe('generated scripts', () => {
   it('bakes the launch facts into the WSL start script', () => {
@@ -26,18 +35,66 @@ describe('generated scripts', () => {
   })
 
   it('bakes the tray config and exposes a -Regenerate-only mode', () => {
-    const script = buildTrayScript({
-      distro: 'Ubuntu',
-      webUrl: 'http://127.0.0.1:3080',
-      shortcutName: 'DeepSeek Harness',
-      wslStartScript: '~/.dsh/dsh-wsl-tray/start.sh',
-    })
+    const script = trayScript()
     expect(script).toContain('$shortcutName = "DeepSeek Harness"')
     expect(script).toContain('if ($Regenerate) {')
     expect(script).toContain('function Start-DshWsl')
     expect(script).toContain('重启 DSH 服务')
     expect(script).toContain('function Restart-Dsh')
     expect(script).toContain("$shortcut.TargetPath = 'C:\\Windows\\System32\\wscript.exe'")
+  })
+
+  it('bakes the watchdog state machine and its tuning into the tray script', () => {
+    const script = trayScript()
+    // Master switch + tuning literals (regenerate to change).
+    expect(script).toContain('$watchdogEnabled = $true')
+    expect(script).toContain(`$probeIntervalSec = ${DEFAULT_WATCHDOG_CONFIG.probeIntervalSec}`)
+    expect(script).toContain(`$maxRestartFailures = ${DEFAULT_WATCHDOG_CONFIG.maxRestartFailures}`)
+    expect(script).toContain(`$downThreshold = ${DEFAULT_WATCHDOG_CONFIG.downThreshold}`)
+    // Liveness probe: HTTP on the web URL with a short timeout.
+    expect(script).toContain('Invoke-WebRequest -Uri $webUrl -UseBasicParsing -TimeoutSec $probeTimeoutSec')
+    // State machine + restart trigger.
+    expect(script).toContain('function Update-Watchdog')
+    expect(script).toContain('function Test-DshAlive')
+    expect(script).toContain('function Invoke-WatchdogRestart')
+    expect(script).toContain('function Enter-WatchdogFailure')
+    // Consecutive-failure give-up: the paused phase exists.
+    expect(script).toContain("$script:wd.phase = 'paused'")
+    expect(script).toContain("$script:wd.autoPaused = $true")
+    // Logs + status JSON the host card reads.
+    expect(script).toContain(`'${WATCHDOG_LOG_NAME}'`)
+    expect(script).toContain(`'${WATCHDOG_STATUS_NAME}'`)
+    expect(script).toContain('function Write-WatchdogLog')
+    expect(script).toContain('function Write-WatchdogStatus')
+    // Tray menu controls for the watchdog.
+    expect(script).toContain('暂停守护进程')
+    expect(script).toContain('恢复守护进程')
+    // Manual restart resets the watchdog failure counter.
+    expect(script).toContain("$script:wd.restartFailures = 0")
+  })
+
+  it('bakes a custom watchdog config passed by the host', () => {
+    const script = buildTrayScript({
+      distro: 'Ubuntu',
+      webUrl: 'http://127.0.0.1:3080',
+      shortcutName: 'DeepSeek Harness',
+      wslStartScript: '~/.dsh/dsh-wsl-tray/start.sh',
+    }, {
+      enabled: false,
+      probeIntervalSec: 30,
+      probeTimeoutSec: 5,
+      downThreshold: 5,
+      restartWaitSec: 300,
+      maxRestartFailures: 7,
+      restartBackoffSec: 120,
+    })
+    expect(script).toContain('$watchdogEnabled = $false')
+    expect(script).toContain('$probeIntervalSec = 30')
+    expect(script).toContain('$probeTimeoutSec = 5')
+    expect(script).toContain('$downThreshold = 5')
+    expect(script).toContain('$restartWaitSec = 300')
+    expect(script).toContain('$maxRestartFailures = 7')
+    expect(script).toContain('$restartBackoffSec = 120')
   })
 })
 

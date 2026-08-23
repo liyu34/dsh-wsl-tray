@@ -29,7 +29,30 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			projectPathHint: "Source checkout path, e.g. /home/me/deepseek-harness. Empty = auto-detect.",
 			savePath: "Save path",
 			savingPath: "Saving…",
-			pathSaved: "Project path saved."
+			pathSaved: "Project path saved.",
+			wdTitle: "Watchdog",
+			wdEnabled: "Watchdog enabled",
+			wdState: "State",
+			wdRestartFailures: "Consecutive failed restarts",
+			wdLastAlive: "Last alive",
+			wdLastRestart: "Last restart",
+			wdProbes: "Failed probes",
+			wdPhaseStarting: "Starting",
+			wdPhaseProbing: "Running (probing)",
+			wdPhaseRestarting: "Restarting…",
+			wdPhaseBackoff: "Cooling down",
+			wdPhasePaused: "Paused",
+			wdPhaseUnknown: "Unknown",
+			wdPausedAuto: "gave up after failures",
+			wdPausedUser: "paused manually",
+			wdRestartOk: "OK",
+			wdRestartFailed: "failed",
+			wdRestartUnknown: "n/a",
+			wdLog: "Watchdog log",
+			wdLogRefresh: "Refresh",
+			wdLogLoading: "Loading…",
+			wdLogEmpty: "(no log entries yet)",
+			wdNotRunning: "No watchdog state on disk yet (tray not running?)"
 		};
 		const zh = {
 			title: "WSL 桌面与托盘",
@@ -51,7 +74,30 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			projectPathHint: "源码目录，例如 /home/me/deepseek-harness。留空则自动检测。",
 			savePath: "保存路径",
 			savingPath: "正在保存…",
-			pathSaved: "工程路径已保存。"
+			pathSaved: "工程路径已保存。",
+			wdTitle: "守护进程",
+			wdEnabled: "守护进程已启用",
+			wdState: "状态",
+			wdRestartFailures: "连续重启失败",
+			wdLastAlive: "上次存活",
+			wdLastRestart: "上次重启",
+			wdProbes: "探针失败次数",
+			wdPhaseStarting: "启动中",
+			wdPhaseProbing: "运行中（探测）",
+			wdPhaseRestarting: "重启中…",
+			wdPhaseBackoff: "冷却中",
+			wdPhasePaused: "已暂停",
+			wdPhaseUnknown: "未知",
+			wdPausedAuto: "连续失败已放弃",
+			wdPausedUser: "手动暂停",
+			wdRestartOk: "成功",
+			wdRestartFailed: "失败",
+			wdRestartUnknown: "未知",
+			wdLog: "守护日志",
+			wdLogRefresh: "刷新",
+			wdLogLoading: "加载中…",
+			wdLogEmpty: "（暂无日志）",
+			wdNotRunning: "磁盘上还没有守护进程状态（托盘未运行？）"
 		};
 		//#endregion
 		//#region src/client/SettingsCard.tsx
@@ -112,6 +158,24 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 		function YesNo({ value }) {
 			return (0, react.createElement)("span", null, value === true ? "✓" : "—");
 		}
+		const WD_PHASE_KEYS = {
+			starting: "wdPhaseStarting",
+			probing: "wdPhaseProbing",
+			restarting: "wdPhaseRestarting",
+			backoff: "wdPhaseBackoff",
+			paused: "wdPhasePaused"
+		};
+		function formatTime(iso, t) {
+			if (iso === null || iso === void 0 || iso === "") return "—";
+			const date = new Date(iso);
+			if (Number.isNaN(date.getTime())) return iso;
+			const pad = (n) => String(n).padStart(2, "0");
+			return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+		}
+		function restartResultLabel(ok, t) {
+			if (ok === null || ok === void 0) return t("wdRestartUnknown");
+			return ok === true ? t("wdRestartOk") : t("wdRestartFailed");
+		}
 		/**
 		* Render the plugin's settings card.
 		* @param props.t - locale reader bound to this plugin's dictionary.
@@ -120,10 +184,13 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 		function SettingsCard({ t }) {
 			const [open, setOpen] = (0, react.useState)(false);
 			const [status, setStatus] = (0, react.useState)(null);
+			const [watchdog, setWatchdog] = (0, react.useState)(null);
 			const [phase, setPhase] = (0, react.useState)("idle");
 			const [pathSavePhase, setPathSavePhase] = (0, react.useState)("idle");
 			const [draftPath, setDraftPath] = (0, react.useState)("");
 			const [message, setMessage] = (0, react.useState)(null);
+			const [logText, setLogText] = (0, react.useState)("");
+			const [logPhase, setLogPhase] = (0, react.useState)("idle");
 			(0, react.useEffect)(() => {
 				if (document.getElementById(STYLE_ID) === null) {
 					const tag = document.createElement("style");
@@ -139,11 +206,17 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 				let live = true;
 				(async () => {
 					try {
-						const [statusResponse, pathResponse] = await Promise.all([fetch("/dsh-wsl-tray/status", { cache: "no-store" }), fetch("/dsh-wsl-tray/project-path", { cache: "no-store" })]);
+						const [statusResponse, pathResponse, watchdogResponse] = await Promise.all([
+							fetch("/dsh-wsl-tray/status", { cache: "no-store" }),
+							fetch("/dsh-wsl-tray/project-path", { cache: "no-store" }),
+							fetch("/dsh-wsl-tray/watchdog", { cache: "no-store" })
+						]);
 						const statusBody = await statusResponse.json();
 						const pathBody = await pathResponse.json();
+						const watchdogBody = await watchdogResponse.json();
 						if (live) {
 							setStatus(statusBody);
+							setWatchdog(watchdogBody);
 							if (typeof pathBody.projectPath === "string") setDraftPath(pathBody.projectPath);
 							setPhase("ready");
 						}
@@ -155,6 +228,16 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 					live = false;
 				};
 			}, []);
+			const loadLog = async () => {
+				setLogPhase("loading");
+				try {
+					const body = await (await fetch("/dsh-wsl-tray/watchdog-log?lines=120", { cache: "no-store" })).json();
+					setLogText(typeof body.log === "string" ? body.log : "");
+					setLogPhase("ready");
+				} catch {
+					setLogPhase("failed");
+				}
+			};
 			const regenerate = async () => {
 				setPhase("regenerating");
 				setMessage(null);
@@ -276,6 +359,133 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: trayOk })
 							})]
 						}),
+						watchdog?.watchdog !== null && watchdog?.watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsh-wsl-tray-field",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsh-wsl-tray-field-label",
+									children: t("wdTitle")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdEnabled")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: value,
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: watchdog.watchdog.enabled })
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdState")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: value,
+										children: [t(WD_PHASE_KEYS[watchdog.watchdog.phase ?? ""] ?? "wdPhaseUnknown"), watchdog.watchdog.phase === "paused" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+											" ",
+											"(",
+											watchdog.watchdog.autoPaused === true ? t("wdPausedAuto") : watchdog.watchdog.pausedByUser === true ? t("wdPausedUser") : t("wdPhasePaused"),
+											")"
+										] }) : null]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdRestartFailures")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: value,
+										children: [
+											watchdog.watchdog.restartFailures ?? 0,
+											"/",
+											watchdog.watchdog.maxRestartFailures ?? "—"
+										]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdProbes")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: value,
+										children: [
+											watchdog.watchdog.probeFailures ?? 0,
+											"/",
+											watchdog.watchdog.downThreshold ?? "—",
+											watchdog.watchdog.lastProbeDetail !== void 0 && watchdog.watchdog.lastProbeDetail !== "" ? ` (${watchdog.watchdog.lastProbeDetail})` : ""
+										]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdLastAlive")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: value,
+										children: formatTime(watchdog.watchdog.lastAliveAt, t)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: rowBase,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: label,
+										children: t("wdLastRestart")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: value,
+										children: [
+											formatTime(watchdog.watchdog.lastRestartAt, t),
+											" ",
+											"[",
+											restartResultLabel(watchdog.watchdog.lastRestartOk, t),
+											"]"
+										]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsh-wsl-tray-buttons",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+										variant: "outline",
+										size: "sm",
+										disabled: logPhase === "loading",
+										onClick: () => {
+											loadLog();
+										},
+										children: logPhase === "ready" ? t("wdLogRefresh") : t("wdLog")
+									})
+								}),
+								logPhase === "ready" && logText !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+									style: {
+										margin: "8px 0 0",
+										padding: 10,
+										maxHeight: 260,
+										overflow: "auto",
+										borderRadius: 8,
+										background: "var(--dsw-alias-bg-layer-1)",
+										border: "1px solid var(--dsw-alias-border-l2)",
+										fontSize: 12,
+										lineHeight: 1.5,
+										color: "var(--dsw-alias-label-secondary)",
+										whiteSpace: "pre-wrap",
+										overflowWrap: "anywhere"
+									},
+									children: logText
+								}) : null,
+								logPhase === "ready" && logText === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "dsh-wsl-tray-message",
+									style: { color: "var(--dsw-alias-label-tertiary)" },
+									children: t("wdLogEmpty")
+								}) : null
+							]
+						}) : watchdog !== null && watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "dsh-wsl-tray-message",
+							style: { color: "var(--dsw-alias-label-tertiary)" },
+							children: t("wdNotRunning")
+						}) : null,
 						status?.wsl === false ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "dsh-wsl-tray-message",
 							style: { color: "var(--dsw-alias-label-error)" },
