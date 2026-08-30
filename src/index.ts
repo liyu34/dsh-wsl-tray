@@ -45,10 +45,13 @@ export function apply(ctx: Context): void {
     const server = (hostCtx as Context & { webServer: RouteWebServer & ServiceWebServer }).webServer
     const service = new TrayService({ logger: hostCtx.logger }, server, DEFAULT_SHORTCUT_NAME)
     hostCtx.effect(() => registerTrayRoutes(server, service), 'dsh-wsl-tray: http routes')
-    // First boot (or a repair after files were deleted) recreates the desktop
-    // shortcut without waiting for the user to open the settings card.
-    void service.ensure().catch((error: unknown) => {
-      hostCtx.logger.warn(`[dsh-wsl-tray] ensure failed: ${error instanceof Error ? error.message : String(error)}`)
-    })
+    hostCtx.effect(() => {
+      // First boot (or a repair after files were deleted) recreates the desktop
+      // shortcut without waiting for the user to open the settings card.
+      void service.ensure().catch((error: unknown) => {
+        hostCtx.logger.warn(`[dsh-wsl-tray] ensure failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+      return () => {}
+    }, 'dsh-wsl-tray: initial ensure')
   })
 }

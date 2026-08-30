@@ -57,7 +57,7 @@ pnpm add dsh-wsl-tray
 
 ## 生成的文件
 
-插件会在以下位置写入四个生成文件：
+插件会在以下位置写入五个生成文件：
 
 | 文件 | 位置 |
 |---|---|
@@ -65,6 +65,7 @@ pnpm add dsh-wsl-tray
 | `dsh-tray.ps1` | `%USERPROFILE%\.dsh\dsh-wsl-tray\dsh-tray.ps1` |
 | `dsh-tray.vbs` | `%USERPROFILE%\.dsh\dsh-wsl-tray\dsh-tray.vbs` |
 | `start.sh` | `~/.dsh/dsh-wsl-tray/start.sh` |
+| `stop.sh` | `~/.dsh/dsh-wsl-tray/stop.sh` |
 
 并创建：
 
@@ -138,7 +139,9 @@ npm pack --dry-run
 ## 已知限制
 
 - 仅在 WSL 环境中启用；非 WSL 环境配置卡片会提示不可用。
-- 守护进程只在托盘运行时有效：选择「退出」会同时停掉托盘的守护能力。若希望开机后就
-  有守护，可把快捷方式加入 Windows 启动文件夹。
-- 托盘“退出”只退出托盘图标，不会停止已经启动的 DSH 后台进程（可通过 Windows 任务管理器或
-  `wsl --shutdown` 停止）。
+- 守护进程只在托盘运行时有效：选择「退出」会通过生成的 `stop.sh` 同时停止守护进程和
+  它启动的 DSH 实例（PID 文件精确跟踪 `start.sh` 启动的实例，另有模式兜底覆盖源码、
+  npm 全局、npx 三种 `bin.js web` 启动方式）。若希望开机后就有守护，可把快捷方式加入
+  Windows 启动文件夹。
+- 用其他方式（不同参数、别的工具）启动的 DSH web 实例不被 PID 文件跟踪；若模式兜底
+  没有命中，请手动停止（Windows 任务管理器或 `wsl --shutdown`）。

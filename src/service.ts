@@ -1,7 +1,7 @@
 /**
- * The WSL desktop/tray launcher service: writes the three generated artifacts
- * (icon, Windows tray helper, WSL start script) and creates the desktop
- * shortcut through a single PowerShell `-Regenerate` run.
+ * The WSL desktop/tray launcher service: writes the four generated artifacts
+ * (icon, Windows tray helper, WSL start script, WSL stop script) and creates
+ * the desktop shortcut through a single PowerShell `-Regenerate` run.
  */
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -15,6 +15,7 @@ import {
   DEFAULT_WEB_URL,
   ICON_FILE_NAME,
   START_SCRIPT_NAME,
+  STOP_SCRIPT_NAME,
   TRAY_SCRIPT_NAME,
   TRAY_VBS_NAME,
   WATCHDOG_LOG_NAME,
@@ -22,6 +23,7 @@ import {
   WSL_DIR_NAME,
   WIN_DIR_REL,
   buildStartScript,
+  buildStopScript,
   buildTrayScript,
   buildTrayVbs,
   type LaunchConfig,
@@ -274,10 +276,10 @@ export class TrayService {
   }
 
   /**
-   * Build the two text artifacts for the current host facts. Null when the
+   * Build the three text artifacts for the current host facts. Null when the
    * DSH web CLI cannot be located (regenerate reports that as an error).
    */
-  private currentScripts(): { startScript: string; trayScript: string; trayVbs: string } | null {
+  private currentScripts(): { startScript: string; stopScript: string; trayScript: string; trayVbs: string } | null {
     const cli = resolveStartCommand(this.projectPath)
     if (cli.sourceCli === null && cli.bakedCli === null) return null
     const config: LaunchConfig = {
@@ -285,6 +287,7 @@ export class TrayService {
       webUrl: webUrlFor(this.webServer),
       shortcutName: this.shortcutName,
       wslStartScript: `~/.dsh/${WSL_DIR_NAME}/${START_SCRIPT_NAME}`,
+      wslStopScript: `~/.dsh/${WSL_DIR_NAME}/${STOP_SCRIPT_NAME}`,
     }
     return {
       startScript: buildStartScript({
@@ -294,13 +297,14 @@ export class TrayService {
         bakedCli: cli.bakedCli,
         webUrl: config.webUrl,
       }),
+      stopScript: buildStopScript(),
       trayScript: buildTrayScript(config, DEFAULT_WATCHDOG_CONFIG),
       trayVbs: buildTrayVbs(),
     }
   }
 
   /**
-   * Ensure the four generated files exist AND match the current host facts
+   * Ensure the five generated files exist AND match the current host facts
    * (web URL, CLI path, shortcut name). A stale start script from another
    * port/profile is a real failure mode, so compare content, not presence.
    */
@@ -310,9 +314,12 @@ export class TrayService {
     if (!filesExist) return this.regenerate()
     const current = this.currentScripts()
     if (current === null) return base
+    const stopScriptPath = join(wslAppDir(), STOP_SCRIPT_NAME)
     try {
       const startMatches = await readFile(base.startScriptPath, 'utf8') === current.startScript
       if (!startMatches) return this.regenerate()
+      const stopMatches = await readFile(stopScriptPath, 'utf8') === current.stopScript
+      if (!stopMatches) return this.regenerate()
       if (base.trayDir !== null) {
         const trayPath = join(base.trayDir, TRAY_SCRIPT_NAME)
         // The file is written with a UTF-8 BOM for Windows PowerShell 5.1.
@@ -368,11 +375,15 @@ export class TrayService {
     try {
       await mkdir(trayDir, { recursive: true })
       await mkdir(wslStartDir, { recursive: true })
+      // Write the stop script FIRST: the tray helper it is about to (re)create
+      // and the watchdog both stop DSH through it.
       await writeFile(join(trayDir, ICON_FILE_NAME), icon)
       await writeFile(join(trayDir, TRAY_SCRIPT_NAME), '\uFEFF' + scripts.trayScript, 'utf8')
       await writeFile(join(trayDir, TRAY_VBS_NAME), scripts.trayVbs, 'utf8')
       await writeFile(join(wslStartDir, START_SCRIPT_NAME), scripts.startScript, 'utf8')
       await chmod(join(wslStartDir, START_SCRIPT_NAME), 0o755)
+      await writeFile(join(wslStartDir, STOP_SCRIPT_NAME), scripts.stopScript, 'utf8')
+      await chmod(join(wslStartDir, STOP_SCRIPT_NAME), 0o755)
 
       const trayScriptWindowsPath = wslPathToWindowsPath(join(trayDir, TRAY_SCRIPT_NAME))
       const result = await runWindowsPowerShell(['-File', trayScriptWindowsPath, '-Regenerate'], undefined, 30000)

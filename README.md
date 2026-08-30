@@ -70,7 +70,7 @@ the **WSL 桌面与托盘** card.
 
 ## Generated files
 
-The plugin writes four generated files:
+The plugin writes five generated files:
 
 | File | Location |
 |---|---|
@@ -78,6 +78,7 @@ The plugin writes four generated files:
 | `dsh-tray.ps1` | `%USERPROFILE%\.dsh\dsh-wsl-tray\dsh-tray.ps1` |
 | `dsh-tray.vbs` | `%USERPROFILE%\.dsh\dsh-wsl-tray\dsh-tray.vbs` |
 | `start.sh` | `~/.dsh/dsh-wsl-tray/start.sh` |
+| `stop.sh` | `~/.dsh/dsh-wsl-tray/stop.sh` |
 
 and creates:
 
@@ -166,8 +167,12 @@ npm pack --dry-run
 
 - Only enabled inside WSL; on non-WSL hosts the card reports that the feature
   is unavailable.
-- The watchdog runs only while the tray icon is up: choosing 退出 stops both
-  the tray and the watchdog. Add the shortcut to the Windows Startup folder
-  if you want the watchdog to follow Windows boot.
-- “退出” only exits the tray icon; it does not stop the already-started DSH
-  background process (use Windows Task Manager or `wsl --shutdown`).
+- The watchdog runs only while the tray icon is up: choosing 退出 stops the
+  watchdog and the DSH instance (via the generated `stop.sh`: a PID file
+  tracks the instance `start.sh` launched, then a pattern fallback covers
+  `bin.js web` launches from source checkouts, npm global installs and npx).
+  Add the shortcut to the Windows Startup folder if you want the watchdog to
+  follow Windows boot.
+- A DSH web instance started any other way (different flags, another tool) is
+  not tracked by the PID file; stop it by hand (Windows Task Manager or
+  `wsl --shutdown`) if the pattern fallback does not reach it.

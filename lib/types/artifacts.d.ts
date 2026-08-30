@@ -25,6 +25,7 @@ export declare const TRAY_SCRIPT_NAME = "dsh-tray.ps1";
 export declare const TRAY_VBS_NAME = "dsh-tray.vbs";
 export declare const ICON_FILE_NAME = "dsh.ico";
 export declare const START_SCRIPT_NAME = "start.sh";
+export declare const STOP_SCRIPT_NAME = "stop.sh";
 export declare const WATCHDOG_LOG_NAME = "watchdog.log";
 export declare const WATCHDOG_STATUS_NAME = "watchdog-status.json";
 export declare const DEFAULT_SHORTCUT_NAME = "DeepSeek Harness";
@@ -39,6 +40,8 @@ export interface LaunchConfig {
     shortcutName: string;
     /** WSL-side path of the generated start script. */
     wslStartScript: string;
+    /** WSL-side path of the generated stop script. */
+    wslStopScript: string;
 }
 /**
  * Baked-in watchdog tuning. The tray helper is generated text, so changing
@@ -73,6 +76,15 @@ export declare function buildStartScript(params: {
     bakedCli: string | null;
     webUrl: string;
 }): string;
+/**
+ * Build the WSL-side stop script. The tray runs it through `wsl.exe`; it
+ * stops exactly the instance start.sh launched (PID file, written before
+ * exec so it tracks the final DSH process), then falls back to a pkill whose
+ * bracketed pattern covers every launcher flavor (source checkout, npm
+ * global, npx all end in `bin.js web`) without matching the wsl.exe/bash
+ * wrapper that carries the pattern text in its own command line.
+ */
+export declare function buildStopScript(): string;
 /**
  * Build the Windows tray helper, including the watchdog state machine.
  *

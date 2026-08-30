@@ -1,7 +1,7 @@
 /**
- * The WSL desktop/tray launcher service: writes the three generated artifacts
- * (icon, Windows tray helper, WSL start script) and creates the desktop
- * shortcut through a single PowerShell `-Regenerate` run.
+ * The WSL desktop/tray launcher service: writes the four generated artifacts
+ * (icon, Windows tray helper, WSL start script, WSL stop script) and creates
+ * the desktop shortcut through a single PowerShell `-Regenerate` run.
  */
 /** Stable wire shape shared by the status and regenerate routes. */
 export interface TrayStatus {
@@ -93,12 +93,12 @@ export declare class TrayService {
     /** Return the last `maxLines` lines of the tray's watchdog log ('' when absent). */
     watchdogLog(maxLines?: number): Promise<WatchdogLogResult>;
     /**
-     * Build the two text artifacts for the current host facts. Null when the
+     * Build the three text artifacts for the current host facts. Null when the
      * DSH web CLI cannot be located (regenerate reports that as an error).
      */
     private currentScripts;
     /**
-     * Ensure the four generated files exist AND match the current host facts
+     * Ensure the five generated files exist AND match the current host facts
      * (web URL, CLI path, shortcut name). A stale start script from another
      * port/profile is a real failure mode, so compare content, not presence.
      */
