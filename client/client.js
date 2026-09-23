@@ -100,35 +100,26 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			wdNotRunning: "磁盘上还没有守护进程状态（托盘未运行？）"
 		};
 		//#endregion
-		//#region src/client/SettingsCard.tsx
+		//#region src/client/SettingsSection.tsx
 		/**
-		* The plugin card on the plugin-configuration tab. It mirrors the host's
-		* PluginCard chrome (collapsible header, name over description, chevron) using
-		* the same design tokens, and owns its controls: the source-project path,
-		* status rows, and the regenerate/open buttons. The card talks to the host
-		* through `/dsh-wsl-tray/*`; it does not depend on the settings scope.
+		* The plugin's settings section. Current DSH gives every registrant its own
+		* page in the settings shell (nav label + content column), so the section owns
+		* only its content: the source-project path, live status rows, the watchdog
+		* state and log, and the regenerate/open controls. It talks to the host through
+		* `/dsh-wsl-tray/*` and depends on no settings scope of its own.
 		*/
-		const STYLE_ID = "dsh-wsl-tray-card-style";
-		const CARD_CSS = `
-.dsh-wsl-tray-card{list-style:none;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-3);transition:border-color .16s,background .16s}
-.dsh-wsl-tray-card:hover{border-color:var(--dsw-alias-label-dimmed)}
-.dsh-wsl-tray-card-open{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}
-.dsh-wsl-tray-header{width:100%;appearance:none;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px}
-.dsh-wsl-tray-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.dsh-wsl-tray-head-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-.dsh-wsl-tray-name{font-size:15px;font-weight:600;line-height:1.4;color:var(--dsw-alias-label-primary)}
-.dsh-wsl-tray-description{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
-.dsh-wsl-tray-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transition:transform .16s}
-.dsh-wsl-tray-chevron-open{transform:rotate(180deg)}
-.dsh-wsl-tray-body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 16px;padding:8px 0 12px}
-.dsh-wsl-tray-status-row{display:flex;justify-content:space-between;gap:12px;font-size:13px;line-height:1.5;padding:4px 0}
-.dsh-wsl-tray-status-label{color:var(--dsw-alias-label-tertiary)}
-.dsh-wsl-tray-status-value{text-align:right;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
+		const STYLE_ID = "dsh-wsl-tray-section-style";
+		const SECTION_CSS = `
+.dsh-wsl-tray-section{display:flex;flex-direction:column;gap:2px;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary)}
+.dsh-wsl-tray-description{margin:0 0 6px;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
 .dsh-wsl-tray-field{display:flex;flex-direction:column;gap:6px;padding:10px 0}
 .dsh-wsl-tray-field-label{font-size:13px;font-weight:500;line-height:1.5;color:var(--dsw-alias-label-primary)}
 .dsh-wsl-tray-field-hint{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
-.dsh-wsl-tray-message{font-size:12px;line-height:1.5;overflow-wrap:anywhere;margin:8px 0 0}
-.dsh-wsl-tray-buttons{display:flex;flex-wrap:wrap;gap:8px;padding-top:10px}
+.dsh-wsl-tray-group{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:1px solid var(--dsw-alias-border-l2)}
+.dsh-wsl-tray-group-title{font-size:13px;font-weight:600;line-height:1.5;color:var(--dsw-alias-label-primary);padding-bottom:4px}
+.dsh-wsl-tray-message{font-size:12px;line-height:1.5;overflow-wrap:anywhere;margin:8px 0 0;color:var(--dsw-alias-label-tertiary)}
+.dsh-wsl-tray-message-error{color:var(--dsw-alias-label-error)}
+.dsh-wsl-tray-buttons{display:flex;flex-wrap:wrap;gap:8px;padding-top:12px}
 `;
 		const rowBase = {
 			display: "flex",
@@ -177,12 +168,11 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			return ok === true ? t("wdRestartOk") : t("wdRestartFailed");
 		}
 		/**
-		* Render the plugin's settings card.
+		* Render the plugin's settings section.
 		* @param props.t - locale reader bound to this plugin's dictionary.
-		* @returns the card element.
+		* @returns the section element.
 		*/
-		function SettingsCard({ t }) {
-			const [open, setOpen] = (0, react.useState)(false);
+		function TraySettingsSection({ t }) {
 			const [status, setStatus] = (0, react.useState)(null);
 			const [watchdog, setWatchdog] = (0, react.useState)(null);
 			const [phase, setPhase] = (0, react.useState)("idle");
@@ -195,7 +185,7 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 				if (document.getElementById(STYLE_ID) === null) {
 					const tag = document.createElement("style");
 					tag.id = STYLE_ID;
-					tag.textContent = CARD_CSS;
+					tag.textContent = SECTION_CSS;
 					document.head.appendChild(tag);
 				}
 				return () => {
@@ -284,270 +274,262 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 			const pathBusy = pathSavePhase === "saving";
 			const shortcutOk = status?.shortcutExists === true;
 			const trayOk = status?.trayScriptExists === true && status?.trayVbsExists === true && status?.iconExists === true;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-				className: `dsh-wsl-tray-card${open ? " dsh-wsl-tray-card-open" : ""}`,
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-					type: "button",
-					className: "dsh-wsl-tray-header",
-					"aria-expanded": open,
-					"aria-label": `${t("title")}`,
-					onClick: () => {
-						setOpen(!open);
-					},
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: "dsh-wsl-tray-head-text",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsh-wsl-tray-name",
-							children: t("title")
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsh-wsl-tray-description",
-							children: t("description")
-						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, { className: `dsh-wsl-tray-chevron${open ? " dsh-wsl-tray-chevron-open" : ""}` })]
-				}), open ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsh-wsl-tray-body",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsh-wsl-tray-field",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsh-wsl-tray-field-label",
-									children: t("projectPath")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									style: inputStyle,
-									value: draftPath,
-									placeholder: "/home/me/deepseek-harness",
-									disabled: pathBusy || busy,
-									onChange: (event) => {
-										setDraftPath(event.target.value);
-									}
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsh-wsl-tray-field-hint",
-									children: t("projectPathHint")
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsh-wsl-tray-section",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "dsh-wsl-tray-description",
+						children: t("description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsh-wsl-tray-field",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsh-wsl-tray-field-label",
+								children: t("projectPath")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								style: inputStyle,
+								value: draftPath,
+								placeholder: "/home/me/deepseek-harness",
+								disabled: pathBusy || busy,
+								onChange: (event) => {
+									setDraftPath(event.target.value);
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsh-wsl-tray-field-hint",
+								children: t("projectPathHint")
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsh-wsl-tray-group",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsh-wsl-tray-group-title",
+								children: t("status")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wsl")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: value,
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: status?.wsl })
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("shortcut")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: value,
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: shortcutOk })
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("tray")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: value,
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: trayOk })
+								})]
+							})
+						]
+					}),
+					watchdog?.watchdog !== null && watchdog?.watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsh-wsl-tray-group",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsh-wsl-tray-group-title",
+								children: t("wdTitle")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdEnabled")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: value,
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: watchdog.watchdog.enabled })
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdState")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: value,
+									children: [t(WD_PHASE_KEYS[watchdog.watchdog.phase ?? ""] ?? "wdPhaseUnknown"), watchdog.watchdog.phase === "paused" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+										" ",
+										"(",
+										watchdog.watchdog.autoPaused === true ? t("wdPausedAuto") : watchdog.watchdog.pausedByUser === true ? t("wdPausedUser") : t("wdPhasePaused"),
+										")"
+									] }) : null]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdRestartFailures")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: value,
+									children: [
+										watchdog.watchdog.restartFailures ?? 0,
+										"/",
+										watchdog.watchdog.maxRestartFailures ?? "—"
+									]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdProbes")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: value,
+									children: [
+										watchdog.watchdog.probeFailures ?? 0,
+										"/",
+										watchdog.watchdog.downThreshold ?? "—",
+										watchdog.watchdog.lastProbeDetail !== void 0 && watchdog.watchdog.lastProbeDetail !== "" ? ` (${watchdog.watchdog.lastProbeDetail})` : ""
+									]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdLastAlive")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: value,
+									children: formatTime(watchdog.watchdog.lastAliveAt, t)
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: rowBase,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: label,
+									children: t("wdLastRestart")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: value,
+									children: [
+										formatTime(watchdog.watchdog.lastRestartAt, t),
+										" ",
+										"[",
+										restartResultLabel(watchdog.watchdog.lastRestartOk, t),
+										"]"
+									]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "dsh-wsl-tray-buttons",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+									variant: "outline",
+									size: "sm",
+									disabled: logPhase === "loading",
+									onClick: () => {
+										loadLog();
+									},
+									children: logPhase === "ready" ? t("wdLogRefresh") : t("wdLog")
 								})
-							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: rowBase,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: label,
-								children: t("wsl")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: value,
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: status?.wsl })
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: rowBase,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: label,
-								children: t("shortcut")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: value,
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: shortcutOk })
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: rowBase,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: label,
-								children: t("tray")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: value,
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: trayOk })
-							})]
-						}),
-						watchdog?.watchdog !== null && watchdog?.watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsh-wsl-tray-field",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsh-wsl-tray-field-label",
-									children: t("wdTitle")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdEnabled")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: value,
-										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(YesNo, { value: watchdog.watchdog.enabled })
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdState")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										style: value,
-										children: [t(WD_PHASE_KEYS[watchdog.watchdog.phase ?? ""] ?? "wdPhaseUnknown"), watchdog.watchdog.phase === "paused" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-											" ",
-											"(",
-											watchdog.watchdog.autoPaused === true ? t("wdPausedAuto") : watchdog.watchdog.pausedByUser === true ? t("wdPausedUser") : t("wdPhasePaused"),
-											")"
-										] }) : null]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdRestartFailures")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										style: value,
-										children: [
-											watchdog.watchdog.restartFailures ?? 0,
-											"/",
-											watchdog.watchdog.maxRestartFailures ?? "—"
-										]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdProbes")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										style: value,
-										children: [
-											watchdog.watchdog.probeFailures ?? 0,
-											"/",
-											watchdog.watchdog.downThreshold ?? "—",
-											watchdog.watchdog.lastProbeDetail !== void 0 && watchdog.watchdog.lastProbeDetail !== "" ? ` (${watchdog.watchdog.lastProbeDetail})` : ""
-										]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdLastAlive")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: value,
-										children: formatTime(watchdog.watchdog.lastAliveAt, t)
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: rowBase,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: label,
-										children: t("wdLastRestart")
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										style: value,
-										children: [
-											formatTime(watchdog.watchdog.lastRestartAt, t),
-											" ",
-											"[",
-											restartResultLabel(watchdog.watchdog.lastRestartOk, t),
-											"]"
-										]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "dsh-wsl-tray-buttons",
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-										variant: "outline",
-										size: "sm",
-										disabled: logPhase === "loading",
-										onClick: () => {
-											loadLog();
-										},
-										children: logPhase === "ready" ? t("wdLogRefresh") : t("wdLog")
-									})
-								}),
-								logPhase === "ready" && logText !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-									style: {
-										margin: "8px 0 0",
-										padding: 10,
-										maxHeight: 260,
-										overflow: "auto",
-										borderRadius: 8,
-										background: "var(--dsw-alias-bg-layer-1)",
-										border: "1px solid var(--dsw-alias-border-l2)",
-										fontSize: 12,
-										lineHeight: 1.5,
-										color: "var(--dsw-alias-label-secondary)",
-										whiteSpace: "pre-wrap",
-										overflowWrap: "anywhere"
-									},
-									children: logText
-								}) : null,
-								logPhase === "ready" && logText === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									className: "dsh-wsl-tray-message",
-									style: { color: "var(--dsw-alias-label-tertiary)" },
-									children: t("wdLogEmpty")
-								}) : null
-							]
-						}) : watchdog !== null && watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "dsh-wsl-tray-message",
-							style: { color: "var(--dsw-alias-label-tertiary)" },
-							children: t("wdNotRunning")
-						}) : null,
-						status?.wsl === false ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "dsh-wsl-tray-message",
-							style: { color: "var(--dsw-alias-label-error)" },
-							children: t("notWsl")
-						}) : null,
-						status?.lastResult !== void 0 && phase !== "regenerating" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "dsh-wsl-tray-message",
-							style: { color: "var(--dsw-alias-label-tertiary)" },
-							children: status.lastResult
-						}) : null,
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsh-wsl-tray-buttons",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-									variant: "primary",
-									size: "sm",
-									disabled: pathBusy || busy || status?.wsl === false,
-									onClick: () => {
-										savePath();
-									},
-									children: pathBusy ? t("savingPath") : t("savePath")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-									variant: "outline",
-									size: "sm",
-									disabled: busy || status?.wsl === false,
-									onClick: () => {
-										regenerate();
-									},
-									children: phase === "regenerating" ? t("regenerating") : t("regenerate")
-								}),
-								status?.webUrl !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-									variant: "outline",
-									size: "sm",
-									onClick: () => {
-										window.open(status.webUrl, "_blank", "noopener");
-									},
-									children: t("openWeb")
-								}) : null
-							]
-						}),
-						message !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "dsh-wsl-tray-message",
-							style: { color: phase === "failed" ? "var(--dsw-alias-label-error)" : "var(--dsw-alias-label-tertiary)" },
-							children: message
-						}) : null
-					]
-				}) : null]
+							}),
+							logPhase === "ready" && logText !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+								style: {
+									margin: "8px 0 0",
+									padding: 10,
+									maxHeight: 260,
+									overflow: "auto",
+									borderRadius: 8,
+									background: "var(--dsw-alias-bg-layer-1)",
+									border: "1px solid var(--dsw-alias-border-l2)",
+									fontSize: 12,
+									lineHeight: 1.5,
+									color: "var(--dsw-alias-label-secondary)",
+									whiteSpace: "pre-wrap",
+									overflowWrap: "anywhere"
+								},
+								children: logText
+							}) : null,
+							logPhase === "ready" && logText === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "dsh-wsl-tray-message",
+								children: t("wdLogEmpty")
+							}) : null
+						]
+					}) : watchdog !== null && watchdog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "dsh-wsl-tray-message",
+						children: t("wdNotRunning")
+					}) : null,
+					status?.wsl === false ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "dsh-wsl-tray-message dsh-wsl-tray-message-error",
+						children: t("notWsl")
+					}) : null,
+					status?.lastResult !== void 0 && phase !== "regenerating" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "dsh-wsl-tray-message",
+						children: status.lastResult
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsh-wsl-tray-buttons",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+								variant: "primary",
+								size: "sm",
+								disabled: pathBusy || busy || status?.wsl === false,
+								onClick: () => {
+									savePath();
+								},
+								children: pathBusy ? t("savingPath") : t("savePath")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+								variant: "outline",
+								size: "sm",
+								disabled: busy || status?.wsl === false,
+								onClick: () => {
+									regenerate();
+								},
+								children: phase === "regenerating" ? t("regenerating") : t("regenerate")
+							}),
+							status?.webUrl !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+								variant: "outline",
+								size: "sm",
+								onClick: () => {
+									window.open(status.webUrl, "_blank", "noopener");
+								},
+								children: t("openWeb")
+							}) : null
+						]
+					}),
+					message !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: `dsh-wsl-tray-message${phase === "failed" ? " dsh-wsl-tray-message-error" : ""}`,
+						children: message
+					}) : null
+				]
 			});
 		}
 		//#endregion
 		//#region src/client/index.ts
 		/**
-		* dsh-wsl-tray client half: registers the settings card under the namespace
-		* the host serves. The card owns its own controls and drives the host routes.
+		* dsh-wsl-tray client half: registers its own settings section in the settings
+		* shell (current DSH renders a section per registrant, so no host-side
+		* namespace pairs with it any more). The section owns its controls and drives
+		* the host routes.
 		*/
 		const NS = "dsh-wsl-tray";
+		/** Nav position: after the built-in sections (General 0, Models 10, Plugins 15, Agent presets 20). */
+		const SECTION_ORDER = 100;
 		const name = "dsh-wsl-tray";
 		const inject = ["slots", "locale"];
 		/**
-		* Register the card. The `settings.plugin.item` key equals the host-registered
-		* namespace, so the plugin-configuration tab pairs the two automatically.
+		* Register the section. The shell projects `id`, `order`, and `label` into its
+		* navigation and mounts the component in the content column; the label thunk is
+		* resolved per render, so switching locale needs no re-registration.
 		* @param ctx - client plugin context.
 		*/
 		function apply(ctx) {
@@ -556,12 +538,13 @@ window.__ModuleLoader__.load({ id: "dsh-wsl-tray", factory: (require) => {
 				en
 			}), "dsh-wsl-tray: dictionaries");
 			const t = ctx.locale.bind(NS);
-			ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
-				name: "settings.plugin.item",
-				key: NS,
-				locale: NS,
+			ctx.slots.inject("settings.section", () => ctx.slots.register({
+				name: "settings.section",
+				id: NS,
+				order: SECTION_ORDER,
+				label: () => t("title"),
 				inject: () => ({ t })
-			}, () => (0, react.createElement)(SettingsCard, { t })));
+			}, () => (0, react.createElement)(TraySettingsSection, { t })));
 		}
 		//#endregion
 		exports.apply = apply;

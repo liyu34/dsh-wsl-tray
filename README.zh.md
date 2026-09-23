@@ -14,15 +14,15 @@
 - **双击托盘图标**也会直接打开 DSH 网页。
 - **托盘内置守护进程**：定时探测 DSH 网址，探测失败即自动重启 DSH，连续失败到上限后
   停止自动重启，并把全过程写入 `watchdog.log`（详见下文「守护进程」）。
-- 插件配置页的 “WSL 桌面与托盘” 卡片可以查看状态（托盘文件 + 守护进程状态），
-  一键重新生成桌面快捷方式，还可以直接查看守护日志。
+- 插件在设置里拥有独立页面（**设置 → WSL 桌面与托盘**）：查看状态（托盘文件 + 守护
+  进程状态），一键重新生成桌面快捷方式，还可以直接查看守护日志。
 - 全程无控制台窗口：快捷方式通过 `wscript.exe` + VBS 完全隐藏启动。
 
 ## 环境要求
 
 - DSH 本身运行在 WSL 中（`WSL_DISTRO_NAME` 已设置，或 `/mnt/c` 可访问）。
 - Windows 侧可执行 `wscript.exe` / `powershell.exe` / `wsl.exe`。
-- DSH web 0.1.0-rc.7 或更新版本（插件配置页 + 客户端 bundle 机制）。
+- DSH web 0.1.7-alpha.2 或更新版本（客户端设置分区 + 客户端 bundle 机制）。
 
 ## 安装
 
@@ -53,7 +53,7 @@ pnpm add dsh-wsl-tray
 }
 ```
 
-重启 `dsh web`，然后打开 **设置 → 插件 → 插件配置**，即可看到 “WSL 桌面与托盘”。
+重启 `dsh web`，然后打开 **设置 → WSL 桌面与托盘** 即可看到该页面。
 
 ## 生成的文件
 
@@ -73,7 +73,7 @@ pnpm add dsh-wsl-tray
 %USERPROFILE%\Desktop\DeepSeek Harness.lnk
 ```
 
-托盘运行期间，守护进程会维护两个运行期文件（配置卡片上都能看到）：
+托盘运行期间，守护进程会维护两个运行期文件（设置页面上都能看到）：
 
 | 文件 | 位置 |
 |---|---|
@@ -99,7 +99,7 @@ pnpm add dsh-wsl-tray
    一旦恢复响应也会自动恢复。
 3. **日志**：每次探测、状态迁移、重启触发、成功/失败、暂停/恢复都会带时间戳和
    级别追加到 `watchdog.log`；当前状态机快照每次探测写入 `watchdog-status.json`。
-   插件配置卡片通过 `/dsh-wsl-tray/watchdog` 和 `/dsh-wsl-tray/watchdog-log` 暴露它们。
+   设置页面通过 `/dsh-wsl-tray/watchdog` 和 `/dsh-wsl-tray/watchdog-log` 暴露它们。
 
 状态机：`starting`（启动宽限期）→ `probing`（稳态探测）→ `restarting`（重启后等待）
 → `backoff`（冷却）或 `paused`（放弃/手动暂停）。上面的调参值烘焙在生成的
@@ -111,7 +111,7 @@ pnpm add dsh-wsl-tray
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.5.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.6.tgz
 ```
 
 然后按上面的方式把 `"dsh-wsl-tray"` 加入 profile 的 `dsh.profile.bundles`。
@@ -124,7 +124,7 @@ pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.5.tgz
 3. **自动开网页**：托盘脚本里的 Windows 定时器每 2 秒探测 DSH URL，一旦就绪就用
    `Start-Process $webUrl` 打开默认浏览器。
 4. **守护进程**：第二个定时器每 10 秒探测 URL，按上面描述的状态机自动重启。
-5. **重新生成**：配置卡片和托盘菜单都调用同一个 `dsh-tray.ps1 -Regenerate` 逻辑。
+5. **重新生成**：设置页面和托盘菜单都调用同一个 `dsh-tray.ps1 -Regenerate` 逻辑。
 
 ## 开发
 
@@ -138,7 +138,7 @@ npm pack --dry-run
 
 ## 已知限制
 
-- 仅在 WSL 环境中启用；非 WSL 环境配置卡片会提示不可用。
+- 仅在 WSL 环境中启用；非 WSL 环境设置页面会提示不可用。
 - 守护进程只在托盘运行时有效：选择「退出」会通过生成的 `stop.sh` 同时停止守护进程和
   它启动的 DSH 实例（PID 文件精确跟踪 `start.sh` 启动的实例，另有模式兜底覆盖源码、
   npm 全局、npx 三种 `bin.js web` 启动方式）。若希望开机后就有守护，可把快捷方式加入

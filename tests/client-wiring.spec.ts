@@ -2,18 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children }: { children?: unknown }) => children ?? null,
-  FishLogo: () => null,
-  IconChevronDownOutline14: () => null,
-  Input: () => null,
 }))
 
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement as h } from 'react'
 import { apply, inject, name } from '../src/client/index.ts'
-import { SettingsCard } from '../src/client/SettingsCard.tsx'
+import { TraySettingsSection } from '../src/client/SettingsSection.tsx'
 
-describe('client card wiring', () => {
-  it('registers the settings.plugin.item card under the dsh-wsl-tray namespace', () => {
+describe('client section wiring', () => {
+  it('registers the settings.section entry dsh-wsl-tray owns', () => {
     const registered: Array<{ meta: Record<string, unknown>; render: () => unknown }> = []
     const calls: string[] = []
     const slots = {
@@ -31,10 +28,6 @@ describe('client card wiring', () => {
         calls.push(label ?? '')
         callback()
       },
-      inject(services: string[], callback: (scoped: unknown) => void) {
-        calls.push(`inject:${services.join(',')}`)
-        callback({ slots, settingsScope: { bind: () => ({ getSnapshot: () => ({}), subscribe: () => () => {}, set: async () => {} }) } })
-      },
       locale: {
         register(namespace: string) {
           calls.push(`locale.register:${namespace}`)
@@ -51,16 +44,18 @@ describe('client card wiring', () => {
     expect(name).toBe('dsh-wsl-tray')
     expect(inject).toEqual(['slots', 'locale'])
     expect(calls).toContain('locale.register:dsh-wsl-tray')
-    expect(calls).toContain('slots.inject:settings.plugin.item')
+    expect(calls).toContain('slots.inject:settings.section')
     expect(registered).toHaveLength(1)
-    expect(registered[0].meta).toMatchObject({ name: 'settings.plugin.item', key: 'dsh-wsl-tray', locale: 'dsh-wsl-tray' })
+    expect(registered[0].meta).toMatchObject({ name: 'settings.section', id: 'dsh-wsl-tray', order: 100 })
+    expect(typeof registered[0].meta.label).toBe('function')
+    expect(registered[0].render()).toBeTruthy()
   })
 
-  it('renders the settings card without a runtime error', () => {
-    const scope = { getSnapshot: () => ({}), subscribe: () => () => {}, set: async () => {} }
-    const html = renderToStaticMarkup(h(SettingsCard, { t: (key: string) => key, scope }))
-    expect(html).toContain('title')
+  it('renders the settings section without a runtime error', () => {
+    const html = renderToStaticMarkup(h(TraySettingsSection, { t: (key: string) => key }))
+    expect(html).toContain('dsh-wsl-tray-section')
     expect(html).toContain('description')
-    expect(html).toContain('dsh-wsl-tray-card')
+    expect(html).toContain('projectPath')
+    expect(html).toContain('regenerate')
   })
 })

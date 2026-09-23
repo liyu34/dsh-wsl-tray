@@ -1,18 +1,17 @@
 /**
  * dsh-wsl-tray host entry. Mounts the loopback API that generates the Windows
  * desktop shortcut, the WSL start script, and the Windows tray helper. The
- * settings namespace registered here is the join key the browser card uses;
- * the configurable source-project path is persisted by the TrayService itself
- * through `/dsh-wsl-tray/project-path`.
+ * browser half registers the matching settings section on its own — current
+ * DSH retired the host-registered settings namespace — so every fact the
+ * section shows, and the configurable source-project path it writes, flows
+ * through the `/dsh-wsl-tray/*` routes mounted here.
  */
 import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "dsh-wsl-tray";
-/** The settings namespace the browser card keys itself to. */
-export declare const TRAY_SETTINGS_NS: import("@deepseek-ai/dsh-settings").SettingsNamespace;
 /**
- * Register the namespace and the HTTP API. The namespace exists so the
- * plugin-configuration tab dispatches this plugin's card; the card then reads
- * and writes the service through the routes below.
- * @param ctx - Host context that may acquire the settings and webserver services.
+ * Mount the HTTP API the browser section talks to. The section is a client-only
+ * contribution; the host owns the generated artifacts and the per-install state
+ * behind these routes.
+ * @param ctx - Host context that may acquire the webserver service.
  */
 export declare function apply(ctx: Context): void;

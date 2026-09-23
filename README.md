@@ -23,9 +23,10 @@ inside WSL.
   timer, restarts DSH when the probes fail, gives up after a bounded number of
   consecutive failed restarts, and writes a full audit trail to
   `watchdog.log` (see [Watchdog](#watchdog) below).
-- The plugin-configuration card shows live status (tray files + watchdog
-  state) and a button that recreates the desktop shortcut without touching
-  WSL by hand. The card can also show the tail of the watchdog log.
+- The plugin's own settings page (**Settings → WSL Desktop & Tray**) shows live
+  status (tray files + watchdog state) and a button that recreates the desktop
+  shortcut without touching WSL by hand. The page can also show the tail of the
+  watchdog log.
 - No console window is shown: the shortcut goes through `wscript.exe` + VBS and
   the entire chain is launched with window style 0.
 
@@ -34,7 +35,8 @@ inside WSL.
 - DSH itself must be running inside WSL (`WSL_DISTRO_NAME` set, `/mnt/c`
   accessible).
 - Windows must be able to run `wscript.exe`, `powershell.exe`, and `wsl.exe`.
-- DSH web 0.1.0-rc.7 or newer (settings cards + client bundle machinery).
+- DSH web 0.1.7-alpha.2 or newer (client-side settings sections + client bundle
+  machinery).
 
 ## Install
 
@@ -65,8 +67,8 @@ and add `"dsh-wsl-tray"` to `package.json`:
 }
 ```
 
-Restart `dsh web` and open **Settings → Plugins → Plugin configuration** to see
-the **WSL 桌面与托盘** card.
+Restart `dsh web` and open **Settings → WSL Desktop & Tray** (中文界面为
+**设置 → WSL 桌面与托盘**).
 
 ## Generated files
 
@@ -87,7 +89,7 @@ and creates:
 ```
 
 While the tray runs, the watchdog maintains two runtime files (both are shown
-on the config card):
+on the settings page):
 
 | File | Location |
 |---|---|
@@ -119,7 +121,7 @@ independent of DSH), and answers the three questions a restart daemon has to:
 3. **Logging** — every probe transition, restart trigger, success/failure and
    pause/resume is appended to `watchdog.log` with a timestamp, level and the
    probe detail; the current state machine snapshot goes to
-   `watchdog-status.json` every tick. The plugin card exposes both through
+   `watchdog-status.json` every tick. The settings page exposes both through
    `/dsh-wsl-tray/watchdog` and `/dsh-wsl-tray/watchdog-log`.
 
 Phases: `starting` (initial boot grace) → `probing` (steady state) →
@@ -135,7 +137,7 @@ included in this repository:
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.5.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.6.tgz
 ```
 
 Then add `"dsh-wsl-tray"` to the profile bundle list as above.
@@ -150,7 +152,7 @@ Then add `"dsh-wsl-tray"` to the profile bundle list as above.
    URL every 2 seconds and calls `Start-Process $webUrl` once DSH answers.
 4. **Watchdog**: a second tray timer probes the URL every 10 seconds and runs
    the state machine described above.
-5. **Regeneration**: the config card and the tray menu both run
+5. **Regeneration**: the settings page and the tray menu both run
    `dsh-tray.ps1 -Regenerate`.
 
 ## Development
@@ -165,8 +167,8 @@ npm pack --dry-run
 
 ## Known limitations
 
-- Only enabled inside WSL; on non-WSL hosts the card reports that the feature
-  is unavailable.
+- Only enabled inside WSL; on non-WSL hosts the settings page reports that the
+  feature is unavailable.
 - The watchdog runs only while the tray icon is up: choosing 退出 stops the
   watchdog and the DSH instance (via the generated `stop.sh`: a PID file
   tracks the instance `start.sh` launched, then a pattern fallback covers
