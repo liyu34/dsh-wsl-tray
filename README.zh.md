@@ -55,6 +55,32 @@ pnpm add dsh-wsl-tray
 
 重启 `dsh web`，然后打开 **设置 → WSL 桌面与托盘** 即可看到该页面。
 
+## 源码编译安装（从 checkout 运行 DSH）
+
+托盘**永远不用 `src` 启动 checkout**。用 tsx 跑 `src` 时，插件包会按 runtime 解析模式从
+`lib` 加载，同一个包在一个进程里出现两份实例；Symbol 不跨实例共享，于是工具状态取到
+undefined、调用工具直接报错。因此 `start.sh` 只会启动 checkout 的**构建产物**：
+
+```sh
+cd ~/deepseek-harness
+pnpm run build        # 必须执行一次；之后每次改源码都要重新构建
+```
+
+然后在 **设置 → WSL 桌面与托盘** 里把源码路径填上（填仓库根目录或它的 `apps/cli`
+目录都可以）。配置了路径之后：
+
+1. `start.sh` 优先执行 `node <checkout>/apps/cli/lib/bin.js web --no-open` —— 既不用
+   `src`，也不会被 PATH 上的另一个 `dsh` 抢走。
+2. 构建产物缺失时，启动脚本把原因和修法写入 `~/.dsh/dsh-wsl-tray/start.log` 并退出，
+   而不是悄悄换成别的安装版本运行。
+3. 在 WSL 环境里导出 `DSH_WSL_TRAY_AUTO_BUILD=1`，脚本会在产物缺失时自己跑
+   `pnpm run build`（完整构建较慢，因此默认关闭）。
+4. 源码比构建产物新时，脚本会写一条 `WARN ... newer than the build output` 日志，
+   避免「改了源码却像没生效」这种排查噩梦。
+
+已知限制：新鲜度检查只扫描 `<checkout>/apps/cli/src`，改 `packages/` 下的源码不会被
+检测到，改完记得自己跑一次 `pnpm run build`。
+
 ## 生成的文件
 
 插件会在以下位置写入五个生成文件：
@@ -111,7 +137,7 @@ pnpm add dsh-wsl-tray
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.6.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.7.tgz
 ```
 
 然后按上面的方式把 `"dsh-wsl-tray"` 加入 profile 的 `dsh.profile.bundles`。

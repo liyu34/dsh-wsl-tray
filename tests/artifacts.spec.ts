@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildStartScript, buildStopScript, buildTrayScript, buildTrayVbs, DEFAULT_WATCHDOG_CONFIG, WATCHDOG_LOG_NAME, WATCHDOG_STATUS_NAME } from '../src/artifacts.ts'
-import { wslPathToWindowsPath, webUrlFor } from '../src/service.ts'
+import { configuredPathProblem, sourceBuildProblem, wslPathToWindowsPath, webUrlFor, type StartCommand } from '../src/service.ts'
 
 function trayScript(): string {
   return buildTrayScript({
@@ -147,6 +147,94 @@ describe('generated scripts', () => {
     expect(script).toContain('$restartWaitSec = 300')
     expect(script).toContain('$maxRestartFailures = 7')
     expect(script).toContain('$restartBackoffSec = 120')
+  })
+})
+
+describe('source-checkout launches', () => {
+  const DSH_ON_PATH = 'command -v dsh >/dev/null 2>&1'
+  const CONFIGURED_BRANCH = 'if [ "$SOURCE_CONFIGURED" = "1" ]; then'
+  // The two call sites differ only by indentation, which is what makes the
+  // launcher order assertable: 4 spaces inside the configured branch (first),
+  // 2 spaces in the plain fallback chain (after the PATH check).
+  const CONFIGURED_CALL = '    if source_build_ready; then\n      start_from_source_build'
+  const FALLBACK_CALL = '  if source_build_ready; then\n    start_from_source_build'
+
+  function startScript(sourceConfigured: boolean): string {
+    return buildStartScript({
+      nodeBin: '/usr/bin/node',
+      sourceCli: '/home/me/deepseek-harness/apps/cli/lib/bin.js',
+      sourceCwd: '/home/me/deepseek-harness',
+      bakedCli: null,
+      sourceConfigured,
+      webUrl: 'http://127.0.0.1:3080',
+    })
+  }
+
+  /** The launch_dsh body, where the launcher order actually lives. */
+  function launchBody(script: string): string {
+    return script.slice(script.indexOf('launch_dsh() {'), script.indexOf('\nlaunch_dsh\n'))
+  }
+
+  it('runs a configured checkout from its build output before the PATH dsh', () => {
+    const body = launchBody(startScript(true))
+    expect(body).toContain(CONFIGURED_BRANCH)
+    expect(body.indexOf(CONFIGURED_CALL)).toBeGreaterThan(-1)
+    expect(body.indexOf(CONFIGURED_CALL)).toBeLessThan(body.indexOf(DSH_ON_PATH))
+  })
+
+  it('keeps the PATH-first fallback order when no project path is configured', () => {
+    const body = launchBody(startScript(false))
+    expect(body.indexOf(DSH_ON_PATH)).toBeGreaterThan(-1)
+    expect(body.indexOf(DSH_ON_PATH)).toBeLessThan(body.indexOf(FALLBACK_CALL))
+  })
+
+  it('never launches src, which would mix a src and a lib instance', () => {
+    const script = startScript(true)
+    expect(script).not.toContain('tsx')
+    expect(script).not.toContain('src/bin.ts')
+    expect(script).toContain('exec "$NODE" "$SOURCE_CLI" web --no-open')
+  })
+
+  it('fails loudly with the fix when the configured checkout was never built', () => {
+    const script = startScript(true)
+    expect(script).toContain('ERROR source build output is missing')
+    expect(script).toContain('pnpm run build')
+    expect(script).toContain('exit 1')
+  })
+
+  it('warns when the cli sources are newer than the build output', () => {
+    const script = startScript(true)
+    expect(script).toContain('source_build_stale')
+    expect(script).toContain('newer than the build output')
+    expect(script).toContain('find "$src_dir" -name \'*.ts\' -newer "$SOURCE_CLI"')
+  })
+
+  it('only auto-builds a checkout when the caller opts in', () => {
+    expect(startScript(true)).toContain('DSH_WSL_TRAY_AUTO_BUILD')
+  })
+
+  it('stops a dev instance that was launched from source', () => {
+    expect(buildStopScript()).toContain("pkill -f '[s]rc/bin\\.ts web'")
+  })
+
+  it('reports a configured checkout with no build output', () => {
+    const launch: StartCommand = {
+      nodeBin: '/usr/bin/node',
+      sourceCli: null,
+      sourceCwd: '/home/me/deepseek-harness',
+      bakedCli: null,
+      sourceConfigured: true,
+      sourceBuildState: 'missing',
+    }
+    expect(sourceBuildProblem(launch)).toContain('pnpm run build')
+    expect(sourceBuildProblem({ ...launch, sourceBuildState: 'built' })).toBeNull()
+    expect(sourceBuildProblem({ ...launch, sourceConfigured: false })).toBeNull()
+  })
+
+  it('rejects a configured project path that does not exist', () => {
+    expect(configuredPathProblem('/definitely/not/here')).toContain('does not exist')
+    expect(configuredPathProblem('')).toBeNull()
+    expect(configuredPathProblem('   ')).toBeNull()
   })
 })
 

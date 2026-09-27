@@ -5,7 +5,7 @@
  */
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, type Stats } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -128,41 +128,175 @@ export function wslAppDir(): string {
 }
 
 /**
+ * How the checkout's build output looks right now.
+ *
+ * `built` and `stale` both have a runnable `apps/cli/lib/bin.js`; `missing`
+ * means the checkout exists but was never built; `none` means no checkout is
+ * known at all.
+ */
+export type SourceBuildState = 'built' | 'stale' | 'missing' | 'none'
+
+/** The launch facts the generated start script is built from. */
+export interface StartCommand {
+  nodeBin: string
+  /** The checkout's BUILD OUTPUT cli — never a `src` entry (see below). */
+  sourceCli: string | null
+  /** The checkout root the launcher cd's into. */
+  sourceCwd: string | null
+  /** The running host's own JS cli, used when no checkout is usable. */
+  bakedCli: string | null
+  /** True when the project path came from the user, not from auto-detection. */
+  sourceConfigured: boolean
+  /** Whether that checkout currently has a usable build output. */
+  sourceBuildState: SourceBuildState
+}
+
+/** `<checkout>/apps/cli/lib/bin.js`, also accepting a configured `apps/cli` dir. */
+function checkoutBuildCli(configured: string): string | null {
+  for (const candidate of [
+    join(configured, 'apps', 'cli', 'lib', 'bin.js'),
+    join(configured, 'lib', 'bin.js'),
+  ]) {
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+/** The checkout root for a configured path (the root itself or its apps/cli). */
+function checkoutRoot(configured: string): string {
+  return configured.endsWith(join('apps', 'cli')) ? dirname(dirname(configured)) : configured
+}
+
+/**
+ * True for an argv[1] that lives in a checkout's `src` tree. Such an entry is
+ * started through tsx and would put a src instance and a lib instance of the
+ * same packages in one process, which is exactly the mixed-loading failure
+ * this plugin avoids; it is never baked in as a launcher.
+ */
+function isSourceEntry(path: string): boolean {
+  return /[\\/]apps[\\/]cli[\\/]src[\\/]/.test(path) || /\.(?:ts|tsx|mts|cts)$/.test(path)
+}
+
+/**
+ * Newest `.ts` mtime under a directory, or 0 when it cannot be read. The walk
+ * is depth-bounded and only ever runs over one small subtree, because it feeds
+ * artifact generation and must not become a repository-wide scan.
+ */
+function newestSourceMtime(dir: string, depth = 8): number {
+  let newest = 0
+  const walk = (current: string, level: number): void => {
+    if (level > depth) return
+    let names: string[]
+    try {
+      names = readdirSync(current)
+    } catch {
+      return
+    }
+    for (const name of names) {
+      const full = join(current, name)
+      let stats: Stats
+      try {
+        stats = statSync(full)
+      } catch {
+        // A file that vanished mid-walk is not a freshness signal.
+        continue
+      }
+      if (stats.isDirectory()) {
+        walk(full, level + 1)
+      } else if (stats.isFile() && /\.tsx?$/.test(name)) {
+        newest = Math.max(newest, stats.mtimeMs)
+      }
+    }
+  }
+  walk(dir, 0)
+  return newest
+}
+
+/** Classify a build output as current or older than the cli sources. */
+function sourceBuildStateOf(cli: string): SourceBuildState {
+  try {
+    const appDir = dirname(dirname(cli))
+    return newestSourceMtime(join(appDir, 'src')) > statSync(cli).mtimeMs ? 'stale' : 'built'
+  } catch {
+    return 'built'
+  }
+}
+
+/**
  * Derive DSH launch candidates from the running host process.
  *
- * The generated start.sh tries, in order:
+ * A configured project path wins: the generated start.sh then launches that
+ * checkout's BUILD OUTPUT and fails loudly instead of falling back to another
+ * install. Without a configured path, the order stays
  * 1. `dsh` on PATH (global npm / pnpm / binary installs);
- * 2. the source checkout CLI at `~/deepseek-harness/apps/cli/lib/bin.js`;
+ * 2. the checkout build output (`<project>/apps/cli/lib/bin.js`, defaulting to
+ *    `~/deepseek-harness`);
  * 3. the current process argv[1] when it is a real JS CLI (npm global or npx
  *    cache while it lasts);
  * 4. `npx --yes dsh` as the final self-healing fallback.
  *
  * Only paths that exist NOW are baked in; runtime fallbacks cover later moves.
+ * `src` entries (tsx) are never baked in: the runtime resolution mode loads
+ * plugins from lib, so a src host mixes two instances of the same packages.
  */
-function resolveStartCommand(projectPath: string | null | undefined): {
-  nodeBin: string
-  sourceCli: string | null
-  sourceCwd: string | null
-  bakedCli: string | null
-} {
+function resolveStartCommand(projectPath: string | null | undefined): StartCommand {
   const nodeBin = process.execPath
   const configured = (projectPath ?? '').trim()
-  const configuredCli = configured === ''
-    ? null
-    : join(configured, 'apps', 'cli', 'lib', 'bin.js')
-  const defaultCli = join(homedir(), 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js')
-  const sourceCli = configuredCli !== null && existsSync(configuredCli)
-    ? configuredCli
-    : existsSync(defaultCli)
-      ? defaultCli
-      : null
-  const sourceCwd = sourceCli === null ? null : dirname(dirname(dirname(dirname(sourceCli))))
+  const configuredExists = configured !== '' && existsSync(configured)
+  const configuredBuild = configuredExists ? checkoutBuildCli(configured) : null
+  const defaultRoot = join(homedir(), 'deepseek-harness')
+  const defaultBuild = configuredBuild === null && existsSync(defaultRoot) ? checkoutBuildCli(defaultRoot) : null
+  const sourceCli = configuredBuild ?? defaultBuild
+  const sourceCwd = sourceCli !== null
+    ? dirname(dirname(dirname(dirname(sourceCli))))
+    : configuredExists
+      ? checkoutRoot(configured)
+      : existsSync(defaultRoot)
+        ? defaultRoot
+        : null
+  const sourceBuildState: SourceBuildState = sourceCli !== null
+    ? sourceBuildStateOf(sourceCli)
+    : sourceCwd === null
+      ? 'none'
+      : 'missing'
   const argv1 = process.argv[1]
   let bakedCli: string | null = null
-  if (argv1 !== undefined && argv1 !== sourceCli && /\.(?:js|mjs|cjs)$/.test(argv1) && existsSync(argv1)) {
+  if (argv1 !== undefined
+    && argv1 !== sourceCli
+    && !isSourceEntry(argv1)
+    && /\.(?:js|mjs|cjs)$/.test(argv1)
+    && existsSync(argv1)) {
     bakedCli = argv1
   }
-  return { nodeBin, sourceCli, sourceCwd, bakedCli }
+  return { nodeBin, sourceCli, sourceCwd, bakedCli, sourceConfigured: configuredExists, sourceBuildState }
+}
+
+/**
+ * The configured project path itself is unusable, so no artifact should be
+ * generated from it (an existing good start script is left alone).
+ */
+export function configuredPathProblem(configuredPath: string): string | null {
+  const trimmed = configuredPath.trim()
+  if (trimmed === '' || existsSync(trimmed)) return null
+  return `the configured project path does not exist: ${trimmed}`
+}
+
+/**
+ * The checkout exists but was never built. The generated script is still
+ * correct — it refuses to launch src and names the fix — so this is reported
+ * as a result, not as a failure to generate.
+ */
+export function sourceBuildProblem(launch: StartCommand): string | null {
+  if (!launch.sourceConfigured || launch.sourceBuildState !== 'missing') return null
+  const root = launch.sourceCwd ?? 'the checkout'
+  return `the configured source checkout has no build output (${join(root, 'apps', 'cli', 'lib', 'bin.js')} is missing): run "pnpm run build" in ${root} first — a checkout must launch from its build output, because a src host loads plugin packages from lib and mixes two instances of the same packages`
+}
+
+/** A non-blocking freshness note for the regenerate result, or null. */
+function launchNotice(launch: StartCommand): string | null {
+  return launch.sourceBuildState === 'stale'
+    ? 'the checkout sources are newer than its build output; run "pnpm run build" to refresh it'
+    : null
 }
 
 /**
@@ -276,12 +410,22 @@ export class TrayService {
   }
 
   /**
-   * Build the three text artifacts for the current host facts. Null when the
-   * DSH web CLI cannot be located (regenerate reports that as an error).
+   * Build the text artifacts for the current host facts, plus the launch plan
+   * they were derived from. Null when no launcher can be located at all
+   * (regenerate reports that as an error).
    */
-  private currentScripts(): { startScript: string; stopScript: string; trayScript: string; trayVbs: string } | null {
+  private currentScripts(): {
+    startScript: string
+    stopScript: string
+    trayScript: string
+    trayVbs: string
+    launch: StartCommand
+  } | null {
     const cli = resolveStartCommand(this.projectPath)
-    if (cli.sourceCli === null && cli.bakedCli === null) return null
+    // A configured checkout with no build output still gets a script: it
+    // refuses to launch src and names the fix, so it starts working the moment
+    // the user runs the build.
+    if (cli.sourceCli === null && cli.bakedCli === null && !cli.sourceConfigured) return null
     const config: LaunchConfig = {
       distro: distroName(),
       webUrl: webUrlFor(this.webServer),
@@ -295,11 +439,13 @@ export class TrayService {
         sourceCli: cli.sourceCli,
         sourceCwd: cli.sourceCwd,
         bakedCli: cli.bakedCli,
+        sourceConfigured: cli.sourceConfigured,
         webUrl: config.webUrl,
       }),
       stopScript: buildStopScript(),
       trayScript: buildTrayScript(config, DEFAULT_WATCHDOG_CONFIG),
       trayVbs: buildTrayVbs(),
+      launch: cli,
     }
   }
 
@@ -353,6 +499,10 @@ export class TrayService {
         lastError: 'cannot determine the Windows user profile from the WSL environment (no /mnt/<drive>/Users/<name> in PATH)',
       }
     }
+    const pathProblem = configuredPathProblem(this.projectPath)
+    if (pathProblem !== null) {
+      return { ...base, ok: false, lastError: pathProblem }
+    }
     const icon = await readIconBytes()
     if (icon === null) {
       return {
@@ -368,7 +518,7 @@ export class TrayService {
       return {
         ...base,
         ok: false,
-        lastError: 'cannot locate the DSH web CLI (process.argv[1] is not a JS file and ~/deepseek-harness/apps/cli/lib/bin.js is missing)',
+        lastError: 'cannot locate a DSH launcher: process.argv[1] is not a JS file, no built source checkout was found, and no project path is configured',
       }
     }
 
@@ -397,7 +547,16 @@ export class TrayService {
         }
       }
       const refreshed = await this.status()
-      const lastResult = result.stdout.trim() || (refreshed.shortcutPath ?? 'shortcut created')
+      // The script is correct and self-healing, so a missing build output is
+      // reported as an actionable result rather than as a write failure.
+      const buildProblem = sourceBuildProblem(scripts.launch)
+      if (buildProblem !== null) {
+        return { ...refreshed, ok: false, lastError: buildProblem }
+      }
+      const notice = launchNotice(scripts.launch)
+      const lastResult = [result.stdout.trim() || (refreshed.shortcutPath ?? 'shortcut created'), notice]
+        .filter(part => part !== null && part !== '')
+        .join('; ')
       return { ...refreshed, ok: refreshed.shortcutExists, lastResult }
     } catch (error) {
       this.ctx.logger?.warn(`[dsh-wsl-tray] regenerate failed: ${error instanceof Error ? error.message : String(error)}`)

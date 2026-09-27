@@ -66,6 +66,39 @@ export declare function webUrlFor(webServer: WebServerLike): string;
 /** The WSL-side directory holding the generated start script. */
 export declare function wslAppDir(): string;
 /**
+ * How the checkout's build output looks right now.
+ *
+ * `built` and `stale` both have a runnable `apps/cli/lib/bin.js`; `missing`
+ * means the checkout exists but was never built; `none` means no checkout is
+ * known at all.
+ */
+export type SourceBuildState = 'built' | 'stale' | 'missing' | 'none';
+/** The launch facts the generated start script is built from. */
+export interface StartCommand {
+    nodeBin: string;
+    /** The checkout's BUILD OUTPUT cli — never a `src` entry (see below). */
+    sourceCli: string | null;
+    /** The checkout root the launcher cd's into. */
+    sourceCwd: string | null;
+    /** The running host's own JS cli, used when no checkout is usable. */
+    bakedCli: string | null;
+    /** True when the project path came from the user, not from auto-detection. */
+    sourceConfigured: boolean;
+    /** Whether that checkout currently has a usable build output. */
+    sourceBuildState: SourceBuildState;
+}
+/**
+ * The configured project path itself is unusable, so no artifact should be
+ * generated from it (an existing good start script is left alone).
+ */
+export declare function configuredPathProblem(configuredPath: string): string | null;
+/**
+ * The checkout exists but was never built. The generated script is still
+ * correct — it refuses to launch src and names the fix — so this is reported
+ * as a result, not as a failure to generate.
+ */
+export declare function sourceBuildProblem(launch: StartCommand): string | null;
+/**
  * Owns the generated files and the shortcut lifecycle for one plugin mount.
  * All Windows process launches are fenced by the helpers in windows.ts.
  */
@@ -93,8 +126,9 @@ export declare class TrayService {
     /** Return the last `maxLines` lines of the tray's watchdog log ('' when absent). */
     watchdogLog(maxLines?: number): Promise<WatchdogLogResult>;
     /**
-     * Build the three text artifacts for the current host facts. Null when the
-     * DSH web CLI cannot be located (regenerate reports that as an error).
+     * Build the text artifacts for the current host facts, plus the launch plan
+     * they were derived from. Null when no launcher can be located at all
+     * (regenerate reports that as an error).
      */
     private currentScripts;
     /**

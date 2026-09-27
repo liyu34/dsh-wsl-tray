@@ -70,6 +70,38 @@ and add `"dsh-wsl-tray"` to `package.json`:
 Restart `dsh web` and open **Settings → WSL Desktop & Tray** (中文界面为
 **设置 → WSL 桌面与托盘**).
 
+## Running from a source checkout
+
+The launcher never starts a checkout from `src`. A `tsx`/`src` host loads plugin
+packages from `lib` (the default runtime resolution mode), so the same packages
+end up twice in one process; symbols do not cross instances, and tool calls fail
+with undefined state. `start.sh` therefore only ever launches a checkout's BUILD
+OUTPUT:
+
+```sh
+cd ~/deepseek-harness
+pnpm run build        # required once, and again after every source change
+```
+
+Then set the checkout path in **Settings → WSL Desktop & Tray** (either the
+repository root or its `apps/cli` directory works). With a path configured:
+
+1. `start.sh` runs `node <checkout>/apps/cli/lib/bin.js web --no-open` before
+   anything else — never `src`, and never whichever `dsh` happens to be on
+   `PATH`.
+2. When the build output is missing, the launcher writes the reason and the fix
+   to `~/.dsh/dsh-wsl-tray/start.log` and exits instead of silently running a
+   different install.
+3. Export `DSH_WSL_TRAY_AUTO_BUILD=1` in WSL to let the launcher run
+   `pnpm run build` itself when the output is missing (a full build is slow, so
+   this stays opt-in).
+4. When the cli sources are newer than the build output, start.sh logs a
+   `WARN ... newer than the build output` line, so a forgotten rebuild does not
+   look like a change that did nothing.
+
+Known limitation: the freshness check only scans `<checkout>/apps/cli/src`; a
+change under `packages/` is not detected, so keep `pnpm run build` in the loop.
+
 ## Generated files
 
 The plugin writes five generated files:
@@ -137,7 +169,7 @@ included in this repository:
 
 ```sh
 cd ~/.dsh/profiles/web
-pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.6.tgz
+pnpm add /path/to/dsh-wsl-tray-github/dist/dsh-wsl-tray-0.1.7.tgz
 ```
 
 Then add `"dsh-wsl-tray"` to the profile bundle list as above.
